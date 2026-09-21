@@ -152,9 +152,11 @@ host 启动还记录 `Vulkan driver doesn't support any external memory modes`�
 | 仅回退渲染为 SwiftShader，保留 4 核/6 GiB | 系统启动完成、美团启动 ok（2053 ms）；14:09:56 宿主 QEMU 再次 signal 11，进程退出 139，ADB 消失 | 与 3.2 中低资源 SwiftShader 的宿主崩溃均有记录；没有可用 core，仍不能断言具体渲染函数或与 App 崩溃同因 |
 | 恢复最终调试配置 | 回到 4 核/6 GiB/host；回读 boot=1、CPU 0–3、NVIDIA GLES、NexusLauncher、三键导航和原 Google IME，不再自动打开美团 | 选择能维持本轮系统启动的配置供后续定位；不标记 App 或持续稳定性通过 |
 
-最终仍用本页第 3 节启动命令。两种渲染均未取得美团稳定业务证据，不能把参数加大当作修复，也不再堆新参数试错。**用户最新决定：美团专项排查暂缓，保留已知问题，优先开发腾讯会议与交互入口。** 后续使用美团时按[有限重试契约](../superpowers/specs/2026-09-21-agent-runtime-contracts.md#41-mvp-的有限重试)恢复观察或符合条件的副屏启动，不能自动重试业务提交或重启 AVD。将来恢复专项定位时，再围绕 MTWebView/JNI 与 ANR 分别取线程/库映射证据；不私自替换登录环境或扩大为新平台迁移。
+最终仍用本页第 3 节启动命令。两种渲染均未取得美团稳定业务证据，不能把参数加大当作修复，也不再堆新参数试错。**用户最新决定：美团专项排查暂缓，保留已知问题，优先开发腾讯会议与交互入口。** 后续使用美团时按[有限重试契约](../superpowers/specs/2026-09-21-agent-runtime-contracts.md#41-mvp-的有限重试)恢复观察或符合条件的副屏启动；整机真实崩溃时，开发者可按[取证与受控重启规则](../superpowers/specs/2026-09-21-agent-runtime-contracts.md#42-开发期的崩溃取证与受控重启)在已授权调试窗口恢复环境。业务提交不盲重放。将来恢复专项定位时，再围绕 MTWebView/JNI 与 ANR 分别取线程/库映射证据；不私自替换登录环境或扩大为新平台迁移。
 
 脱敏结果保存在本地 `artifacts/diagnostics/meituan-upgraded-host-failed.json`；首轮定向 logcat、崩溃摘要、各次启动日志和 Apport 记录留作未解决问题证据，不入 Git。新配置尚未跑主副屏真人输入或业务验收。问题与状态见开发日志 J11–J12。
+
+**后续只读日志复核：**宿主 kernel 在 13:37:43 和 14:09:56 均记录 RenderThread segfault，与 Apport 的两个 QEMU SIGSEGV 时点对应；两次使用不同 CPU/RAM 的 SwiftShader 配置，不能只凭线程名判断具体出错函数。Apport 明确因程序不属于系统软件包跳过 core，没有可解析完整栈。当前仓库尚无通用 Agent 产品实现，崩溃发生于 App 准备/ADB 调试阶段；这排除了“已运行的通用 Agent 业务代码异常”这一具体说法，但不能排除调试动作或配置触发底层缺陷。复核时 host/4 核/6 GiB 的 QEMU 仍在运行，ADB=device、boot_completed=1；本次未重启或复现美团故障。崩溃位置与触发原因分开记录。
 
 ## 4. 验证边界与后续工作
 

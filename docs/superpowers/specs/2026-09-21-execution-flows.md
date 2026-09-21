@@ -215,6 +215,8 @@ sequenceDiagram
 
 ## 8. 时序：重启 / 设备断连恢复
 
+下面描述设备可重新连接后的运行时恢复；整机进程已崩溃时，先按[运行时契约 4.2](2026-09-21-agent-runtime-contracts.md#42-开发期的崩溃取证与受控重启)保存日志、初判并在已授权调试窗口恢复 AVD。运行时保持 PAUSED 和业务写入屏障，环境重启成功本身不将任务改为 RUNNING。开发恢复可继续进行，已中断的并发演示须另起一轮，不能记作无干扰通过。
+
 ```mermaid
 sequenceDiagram
     participant C as Coordinator
