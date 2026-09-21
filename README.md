@@ -31,8 +31,8 @@ flowchart LR
 
 上述新增配置名尚未接入代码。`.env`、截图、账号数据和原始轨迹不入库；产品 `skills/` 与开发助手的 `.agents/skills/` 分开。
 
-- [主设计](docs/superpowers/specs/2026-09-21-wellphone-design.md) · [运行时契约](docs/superpowers/specs/2026-09-21-agent-runtime-contracts.md)：工具、skills、DAG/replan、消息和恢复。
-- [交互应用建议](docs/superpowers/specs/2026-09-21-interaction-app-design.md)：Web 上传、对话、任务控制、SSE 恢复；新增入口待审阅，尚未实现。
+- [主设计](docs/superpowers/specs/2026-09-21-wellphone-design.md) · [运行时契约](docs/superpowers/specs/2026-09-21-agent-runtime-contracts.md) · [状态与时序](docs/superpowers/specs/2026-09-21-execution-flows.md)：模块输入输出、DAG/replan、澄清/授权/接管；[开发规范](AGENTS.md)规定同步维护。
+- [交互应用设计](docs/superpowers/specs/2026-09-21-interaction-app-design.md)：Web 上传、对话、任务控制、SSE 恢复；设计基线，尚未实现。
 - [本轮资料核验](docs/research/2026-09-21-agent-runtime-and-gui-research.md) · [平台研究与历史路线](docs/research/2026-09-21-platform-research.md)：三份用户参考及官方源码依据。
 - [验证与演示计划](docs/validation/2026-09-21-feasibility-and-demo.md)：实验门槛、三个演示、7 天安排和未通过时的处理。
 - [原 AOSP 实测报告](docs/validation/2026-09-21-appium-concurrency-probe.md) · [探针部署步骤](experiments/display_concurrency/README.md)：60 秒主屏合成输入期间，副屏完成 141 轮操作；保留限制与失败记录。

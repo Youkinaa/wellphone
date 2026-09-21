@@ -12,7 +12,7 @@ AVD 是 Android Virtual Device，即模拟器使用的一台虚拟 Android 设�
 | 系统镜像 | Google APIs Android 14 / API 34 / x86_64 / revision 14，无 Play Store |
 | fingerprint | `google/sdk_gphone64_x86_64/emu64xa:14/UE1A.230829.050/12077443:userdebug/dev-keys` |
 | 实际 ABI / native bridge | `x86_64,arm64-v8a` / `libndk_translation.so` |
-| 显示 / CPU / RAM | 720×1280，density 240；2 核、3072 MiB，SwiftShader |
+| 显示 / CPU / RAM | 720×1280，density 240；**4 核、6144 MiB，host / NVIDIA 硬件渲染**（同日升级，兼容问题见 3.3） |
 | 工具 | Emulator 37.1.11、ADB 37.0.1；未使用 `adb root` |
 
 官方镜像来源：[仓库元数据](https://dl.google.com/android/repository/sys-img/google_apis/sys-img2-3.xml)、[r14 下载](https://dl.google.com/android/repository/sys-img/google_apis/x86_64-34_r14.zip)。下载大小 `1563721130` 字节，SHA1 `e0f6c9a0691aa27bd597d0deb1bcfdc943ac8ca7`，与官方元数据匹配，已解压校验。
@@ -81,7 +81,7 @@ env ANDROID_AVD_HOME="$HOME/.cache/wellphone/avd" \
   ANDROID_HOME="$HOME/.cache/wellphone/android-sdk" \
   "$HOME/.cache/wellphone/android-sdk/emulator/emulator" \
   -avd wellphone_api34_apps -port 5580 -no-snapshot -no-audio \
-  -no-boot-anim -no-metrics -gpu swiftshader -memory 3072 -cores 2 -skin 720x1280
+  -no-boot-anim -no-metrics -gpu host -memory 6144 -cores 4 -skin 720x1280
 ```
 
 在应用列表打开“美团”与“Tencent Meeting”，由用户处理首次协议、登录和验证码；确认美团已保存地址、腾讯会议可进入账号首页。当前模拟器默认为英文界面；语言、日历时区和通知设置在后续准备期明确，不能在正式并发任务中偷偷改全局配置。`-no-audio` 是本次准备环境的宿主音频配置，不是证明产品不会产生声音干扰的测试手段。
@@ -108,6 +108,8 @@ env ANDROID_AVD_HOME="$HOME/.cache/wellphone/avd" \
 本报告第 4 节的 87 轮机制实验发生在切换导航之前；之后若复跑固定坐标探针，必须重新核对导航/键盘布局和坐标。此次准备期导航调整不作为 Agent 执行期间修改主屏设置的许可。
 
 ### 3.2 登录后美团卡顿：配置取证与 GPU 对照
+
+本节记录升级前的历史实验；当前配置与后续结果以 3.3 为准。
 
 用户反馈登录成功但美团很卡。先只读采样，随后在用户明确“暂时不用，可以留给调试”的窗口尝试一次图形配置对照；不清除 userdata、不卸载或重新登录、不创建订单。下列是准备期主屏检查，**不是主副屏并发性能验收**。
 
@@ -136,6 +138,24 @@ host 启动还记录 `Vulkan driver doesn't support any external memory modes`�
 
 本地证据：`artifacts/diagnostics/2026-09-21-meituan-readonly.json`、`meituan-swiftshader-scroll.json`、`meituan-host-scroll-failed.json`、两份启动日志及脱敏 ANR 摘要，均默认不入库。后续针对 ANR 做线程/原生桥与负载分析，CPU、RAM、GPU 各自单变量验证；没有实测就不承诺参数加大后一定流畅。官方说明：[图形与 VM 加速](https://developer.android.com/studio/run/emulator-acceleration)、[ARM 应用翻译](https://android-developers.googleblog.com/2020/03/run-arm-apps-on-android-emulator.html)。
 
+### 3.3 用户要求升级资源：4 核 / 6 GiB 与新的失败证据
+
+本节是 3.2 历史对照之后的新一轮配置升级；**旧 2 核/3 GiB 和 87 轮机制证据不代表新配置已验收**。宿主短采样可用内存约 8.84 GiB、CPU 空闲约 63–65%，换掉原 3 GiB 实例后选择 4 vCPU / 6 GiB，给宿主和后续运行时留余量。CPU/RAM/GPU 同时升级属于用户要求的容量调整，不能据此推导单个参数的性能收益。
+
+持久修改本地 AVD `config.ini` 为 `hw.cpu.ncore=4`、`hw.ramSize=6144`、`hw.gpu.enabled=yes`、`hw.gpu.mode=host`；原配置保留为 `config.before-resource-upgrade-20260921-135546.ini`。未清除 userdata、卸载 App 或更改账号。实际 guest `cpu/online=0-3`，MemTotal 为 6074336 KiB（扣除系统保留），SurfaceFlinger 报 NVIDIA GeForce RTX 3070 Ti；不是只改了文档或启动参数。
+
+| 顺序 | 检查与结果 | 解释边界 |
+| --- | --- | --- |
+| 4 核/6 GiB/host 首次启动 | 系统启动完成；美团启动返回 ok、TotalTime 1222 ms，但约 17 秒后崩溃回桌面 | `am start` 成功不能证明 App 持续可用 |
+| 14:02:28 美团原生崩溃 | `preload-general` 线程 SIGABRT，`Bad JNI_OnLoad`；Java 栈为自带 MTWebView `13800109` 初始化 → System.loadLibrary，native 栈进入 `libndk_translation::DoBadTrampoline` | 定位到 MTWebView 原生库加载的 ARM 翻译/JNI 边界；缺具体 so 地址映射，不能认定翻译器自身 bug、GPU 根因或与 ANR 同因 |
+| 同配置重新打开美团 | 返回 ok、TotalTime 647 ms，截图确认首页；滚动探针在预热阶段 ADB swipe 超过 25 秒，14:06:40 记录 MainActivity 等待 5005 ms 的 ANR | 没完成 24 次测量，没有新卡顿率或“更流畅”的证据 |
+| 仅回退渲染为 SwiftShader，保留 4 核/6 GiB | 系统启动完成、美团启动 ok（2053 ms）；14:09:56 宿主 QEMU 再次 signal 11，进程退出 139，ADB 消失 | 与 3.2 中低资源 SwiftShader 的宿主崩溃均有记录；没有可用 core，仍不能断言具体渲染函数或与 App 崩溃同因 |
+| 恢复最终调试配置 | 回到 4 核/6 GiB/host；回读 boot=1、CPU 0–3、NVIDIA GLES、NexusLauncher、三键导航和原 Google IME，不再自动打开美团 | 选择能维持本轮系统启动的配置供后续定位；不标记 App 或持续稳定性通过 |
+
+最终仍用本页第 3 节启动命令。两种渲染均未取得美团稳定业务证据，不能把参数加大当作修复，也不再堆新参数试错。下一步围绕上述 MTWebView/JNI 触发链和 ANR 分别取线程/库映射证据，必要时讨论固定 App/镜像/模拟器版本；不私自替换登录环境或扩大为新平台迁移。
+
+脱敏结果保存在本地 `artifacts/diagnostics/meituan-upgraded-host-failed.json`；首轮定向 logcat、崩溃摘要、各次启动日志和 Apport 记录留作未解决问题证据，不入 Git。新配置尚未跑主副屏真人输入或业务验收。问题与状态见开发日志 J11–J12。
+
 ## 4. 验证边界与后续工作
 
 换镜像后已用同一探针源码重新运行，结果见[本镜像机器记录](../../experiments/display_concurrency/results/2026-09-21-google-api34.json)，不直接沿用原 AOSP 的 141 轮结论：
@@ -156,4 +176,4 @@ host 启动还记录 `Vulkan driver doesn't support any external memory modes`�
 
 本轮尚未验证美团搜索/结算、腾讯会议查询/预约、后台旧 task、支付/外链或通知干扰。语义快照与模型编排仍为设计阶段。
 
-后续依照[验证计划](2026-09-21-feasibility-and-demo.md)推进：登录已由用户确认 → 性能诊断及真实 App 必要页面预检 → 副屏填写/转移与主屏真人输入并发 → 通用 Agent。交互层建议可在设计审阅后并行开发，不依赖所有业务页面均通过；真实任务执行入口仍受设备门槛控制。问题与最终解决过程持续更新[开发日志](../development-journal.md)。
+后续依照[验证计划](2026-09-21-feasibility-and-demo.md)推进：登录已由用户确认 → 性能诊断及真实 App 必要页面预检 → 副屏填写/转移与主屏真人输入并发 → 通用 Agent。交互层可按设计基线并行开发，不依赖所有业务页面均通过；真实任务执行入口仍受设备门槛控制。问题与最终解决过程持续更新[开发日志](../development-journal.md)。

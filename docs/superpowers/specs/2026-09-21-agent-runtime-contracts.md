@@ -1,23 +1,60 @@
 # 通用 GUI Agent 运行时契约
 
-日期：2026-09-21。状态：设计草案，未实现。与[主设计](2026-09-21-wellphone-design.md)配套，约定模块边界及恢复语义，不是逐业务固定 workflow。
+日期：2026-09-21。状态：MVP 设计依据，未实现。与[主设计](2026-09-21-wellphone-design.md)配套，约定模块边界、交换数据及持久化协议；任务状态、完整时序和用户交接以[执行流程](2026-09-21-execution-flows.md)为准，不是逐业务固定 workflow。
 
 ## 1. 模块及最小接口
 
-| 模块 | 接口职责 | 首版实现 |
+以下是同一后端进程内的职责，不是独立服务。表中调用均由可信代码组织；模型只提出数据或工具调用建议，不能自行串起另一套执行循环。
+
+| 模块 | 触发方 / 时机 | 输入 | 输出 → 消费者 | 职责与首版边界 |
+| --- | --- | --- | --- | --- |
+| Interaction API | Web 上传、发送、控制、查询或 SSE 连接 | 图片字节；消息/控制/确认 DTO；查询游标 | `InputArtifact`、`Receipt`、`TaskView`、事件 → Web；已持久请求 → Coordinator | FastAPI 同源入口，校验并接纳请求；不规划、不直接操作设备；HTTP 细节见交互应用设计 |
+| RequestInterpreter | Coordinator 取到新消息或用户补充 | 原话、输入图引用、必要历史、当前任务与待回复项 | `NormalizedRequest`、字段候选、缺失槽位 → Coordinator | 规则优先，必要时调用同一 ModelAdapter；解释目标、指代与修改；按需用 VLM 提取上传原图，不操作手机 |
+| SkillCatalog | Coordinator 在目标明确后选择技能，或 replan 改变所需能力 | 规范化目标、领域线索、可用工具、已测 AppProfile | 固定版本的 `SkillBundle` → Planner、GuiExecutor | 先按元数据/关键词筛选，必要时经 ModelAdapter 比较候选；读取本地 Markdown，最多加载 3 个 skill；只提供知识，不取得执行权 |
+| Planner | Coordinator 首次建图或决定 replan | 当前请求/约束、SkillBundle、可用工具、已有 Plan/节点结果及必要观察 | 候选 `Plan` / `PlanPatch`，或待澄清内容 → Coordinator | 调用模型形成目标级 DAG；Coordinator 使用确定性校验器接纳，Planner 不写权威版本 |
+| Coordinator | 应用启动恢复、已接纳消息/控制、步骤返回、用户回复 | RunStore 权威状态、Interpreter/Planner/GuiExecutor 返回、控制事件 | 调用后续模块；持久任务/计划/节点结果；`PendingInteraction`、进度和终态事件 → API/outbox | 唯一 run owner，负责状态与顺序；LangGraph 固定通用图；澄清、授权和接管复用现有 interrupt，不新增交接服务 |
+| GuiExecutor | Coordinator 调用一个 ready 节点的 `step` | `StepContext`：节点目标、已解析输入、技能、游标、允许工具及当前会话 | `StepResult` → Coordinator；工具建议 → Gateway | 每次观察/判断后至多派发一个改变设备状态的原子动作，再让出控制；动作成功不等于节点目标完成 |
+| ModelAdapter（LangChain） | Interpreter 理解/提取、SkillCatalog 比较候选、Planner 建图、GuiExecutor 决策时按需调用 | `ModelRequest`：消息、图片引用、输出 schema、允许工具 schema | `ModelReply`：结构化候选或工具建议 → 原调用方 | 统一模型接口与消息编解码，按引用加载实际图像载荷；不执行工具，不另建模型服务 |
+| ToolRegistry / Gateway | Coordinator/GuiExecutor 获取能力或请求工具；恢复时请求必要核查 | 工具名/参数、任务版本与控制水位、Observation、授权与操作引用 | `ToolSpec` 或 `ActionResult` → 调用方；授权提案随步骤返回 Coordinator | Registry 声明现有工具；Gateway 在一个入口检查范围/版本/授权，记录提交意图后调用后端；不建通用策略 DSL |
+| PhoneBackend | Gateway 执行 `phone.*` | 已校验的会话、观察/动作请求 | `PhoneSession`、`Observation`、设备执行结果 → Gateway | 独占 Appium/scrcpy 通道；负责副屏连接、观察和定向操作；不决定业务目标或授权 |
+| ConversationHistoryStore | Coordinator 准备上下文；outbox 投递或 API 查询历史 | conversation/message ID、消息记录、窗口范围 | LangChain 消息窗口/摘要、投递结果 → Coordinator/API | 普通 Redis 的 `append_once/list_window/get_summary`；保存对话历史，不覆盖 RunStore 的执行事实 |
+| RunStore / OperationLedger | API 接纳；Coordinator 变更任务；Gateway 记录真实操作；启动时对账 | 请求/控制、版本化计划/结果、操作意图/证据、outbox 事件 | receipt、权威状态、控制水位、操作状态、待投递事件 → 原调用方 | SQLite；按既有事务协议读写。API 写接纳事实，Coordinator 独占计划/节点/任务状态，Gateway 写操作账本；不把 checkpoint 当提交凭据 |
+| CheckpointerFactory / checkpoint | 应用初始化创建；LangGraph 在步骤边界保存、恢复 | 本地配置；thread ID、执行游标/操作引用 | AsyncSqliteSaver 及执行快照 → LangGraph/Coordinator | 复用文件型 AsyncSqliteSaver；恢复先与 RunStore 对账，不启动第二个调度器 |
+| ArtifactStore | API 上传；PhoneBackend 保存观察；模型调用加载图片；执行器登记证据 | 图片/树/结果字节、来源元数据或本任务 artifact 引用 | 不可变文件引用/摘要，或实际载荷 → API、ModelAdapter、执行器 | 本地目录；输入原图与设备观察来源分开；有消费者的材料保留，默认不进 Git |
+
+### 1.1 最小交换数据
+
+以下描述数据形状，不是新增框架或逐模块消息总线；可以用普通类型化对象实现。标有 `?` 的字段允许缺省；ID、版本、会话和控制水位由可信代码生成/注入，模型输出不能覆盖。大图片、原始树和完整轨迹用 artifact 引用，具体载荷只在需要时读取。
+
+| 数据 | 最小内容 / 返回种类 | 生产者 → 消费者 |
 | --- | --- | --- |
-| Interaction API（新增建议） | 图片上传、消息/控制接纳、状态查询、SSE | FastAPI 同源入口；不另建执行器，细节见交互应用设计 |
-| RequestInterpreter | 原话、历史和活动任务 → 规范化请求/控制事件 | 规则 + 一次结构化模型调用 |
-| SkillCatalog | 列元数据、选择并加载版本固定的技能内容 | 本地 Markdown；最多加载 3 个相关 skill |
-| Planner | 请求、能力、skills、观察 → Plan / PlanPatch | 模型生成，确定性校验器把关 |
-| Coordinator | 接收控制事件、调度、合并结果、修改计划 | LangGraph 固定状态图，单个 run owner |
-| GuiExecutor | 节点目标 → 有界观察/行动循环 → 带证据结果 | LangChain 模型消息和结构化工具 |
-| ToolRegistry / Gateway | 注册工具、校验参数、权限、状态与预算 | 可信代码；技能无权修改 |
-| PhoneBackend | 副屏会话、观察、输入与目标 App 导航 | Appium UiAutomator2 + scrcpy + 受控适配层 |
-| ConversationHistoryStore | `append_once/list_window/get_summary` | 普通 Redis，完整 LangChain message 编解码 |
-| RunStore / OperationLedger | 计划版本、控制事件、执行意图与真实结果 | SQLite，独立于 checkpoint |
-| CheckpointerFactory | 创建执行快照后端 | 文件型 AsyncSqliteSaver |
-| ArtifactStore | 用户输入图、观察截图、树、证据与摘要的引用 | 本地目录，区分输入与观察来源，默认不进 Git |
+| `RequestEnvelope` | `conversation_id, client_message_id, text, artifact_ids[], target_task_id?`；对待回复项的响应另绑定其 `pause_id` | API 接纳到 RunStore → Coordinator/Interpreter |
+| `Receipt` | `receipt_id, source_id, task_id?, accepted_at, control_seq?`；同请求重发返回同一 receipt，接纳不表示执行成功 | RunStore/API → Web；任务尚未创建时 `task_id` 可为空，后续事件补关联 |
+| `NormalizedRequest` | 第 2 节的目标、约束、意图、指代、缺失槽位、输入图与消息来源；图中提取字段保留原值/规范化值和来源 | Interpreter → Coordinator 校验并持久化 → Planner |
+| `SkillBundle` | `skills[{id,version,content_hash,content,required_capabilities}], app_profile_refs[]` | SkillCatalog → Planner/GuiExecutor |
+| `ModelRequest / ModelReply` | 请求为 `messages, image_refs[], output_schema?, tool_schemas[]`；返回为 `message, parsed_output?, tool_calls[]`。文本解释、图像字段、技能选择、计划、工具建议是不同的调用用途 | Interpreter/SkillCatalog/Planner/GuiExecutor ↔ ModelAdapter；调用方校验返回，不在适配器执行动作 |
+| `Plan / PlanPatch` | 第 3–4 节的目标级 DAG、版本、节点输入/能力/完成条件，或基于旧版本的变更 | Planner → Coordinator 校验/提交 → GuiExecutor |
+| `StepContext` | `task_id, plan_revision, node_id, attempt_id, goal, resolved_inputs, cursor, skill_refs, allowed_tools, budget, session_ref?, latest_observation_ref?`；需要手机动作时必须有有效会话，所带观察仍须核验新鲜度 | Coordinator → GuiExecutor |
+| `ToolSpec` | `name,input_schema,output_kind,effect,required_capabilities`；当前节点允许工具是 Registry 与已接纳计划能力的交集 | Registry → Coordinator/GuiExecutor/ModelAdapter；只暴露声明，不授予额外能力 |
+| `ToolCall / ActionResult` | 调用含 `tool_name,args` 与可信任务上下文，手机字段见第 5 节；返回含 `status,payload,evidence_refs,operation_id?`，状态为 `OK / REJECTED / NEEDS_AUTHORIZATION / FAILED / OUTCOME_UNKNOWN` | GuiExecutor/Gateway ↔ 后端；结果回到当前 step。`NEEDS_AUTHORIZATION` 携带具体 ActionProposal，不当作普通失败重试 |
+| `NodeResult` | `outputs, completion_checks, evidence_refs`；checks 对应节点完成条件，结论区分已观察事实与未完成部分 | GuiExecutor → Coordinator 核验后写 `node_runs`，并向后继解析输入 |
+| `StepResult` | `task_id,plan_revision,node_id,attempt_id,event_id,kind,cursor,payload,evidence_refs`；`kind` 为 `CONTINUE / NODE_RESULT / PAUSE / FAILED`，分别承载动作进度、NodeResult、暂停原因/待交互内容或尝试失败 | GuiExecutor → Coordinator；这些是步骤返回种类，不是任务状态或操作账本状态 |
+| `PendingInteraction` | `pause_id,task_id,status,reason,prompt,expected_response,plan_revision,accepted_control_seq,source_refs,proposal_id?`；`status=OPEN / RESOLVED / SUPERSEDED`；`expected_response` 描述所需字段/候选，或 `decision/done` 类型。授权精确参数通过 proposal 引用读取，不再复制 | Coordinator 持久化 → API/Web；只展示当前 OPEN 待办，旧记录用于追溯；状态流转见执行流程 |
+| `UserResponse` | `event_id,pause_id,response,expected_plan_revision,expected_control_seq,proposal_id?,operation_id?,canonical_args_hash?`；自然语言回复由消息接纳路径关联同一稳定 ID；授权回复须带后三项 | API 持久接纳 → Coordinator 核对当前待办；旧待办回复不套到新待办，同 ID 回复不重复应用 |
+| `TaskView / TaskEvent` | 快照含 `task_id,status,plan_revision,accepted_control_seq,applied_control_seq,progress,pending_interaction?,result?`；事件含 `event_seq,task_id,plan_revision,type,payload`，暂停/控制事件的 payload 保留当前暂停标识与控制水位 | RunStore 已提交事实 → API/Web；SSE 与快照水位规则见交互应用设计 |
+
+`InputArtifact`、`PhoneSession`、`Observation` 的字段归第 5 节；控制事件归第 4 节，授权提案和操作账本归第 7 节。任务级 `TaskStatus` / `PauseReason` 及其转换只在执行流程中定义；本文件的节点、步骤返回与操作状态各自表达不同层次，不能互相赋值。
+
+输入图提取由 Interpreter 按需调用 ModelAdapter，输出候选业务字段；Coordinator 先做确定性日期/时区等校验，再交给 Planner。后续缺失信息走同一用户补充路径，不新建一个图片业务执行器。GUI 视觉定位由 GuiExecutor 发起，只使用当前副屏 Observation；两条路径共用模型适配器，上传图不能产生设备点击坐标。
+
+Interpreter 的缺失槽位、Planner/GuiExecutor 无法消除的歧义、Gateway 的授权不足都返回 Coordinator。只有 Coordinator 建立/解除持久暂停并触发现有 interrupt；自然语言分类为 `APPROVE` 只是意图候选，必须关联当前具体提案、校验参数和已有授权，不能直接放行提交。工具或模型模块不得自行等待用户并私自恢复动作。
+
+### 1.2 MVP 实现边界
+
+- 先完成“接纳输入 → 理解与必要澄清 → 选技能/计划 → 观察与单步工具 → 核验结果 → 回显”正常主线，再覆盖已有依据的失败。单后端进程、一个 Coordinator、一个活动任务，复用同一工具和 skills；上传/API/模型适配均不另部署服务。
+- 必须保留的约束是副屏范围和观察新鲜度、控制请求阻断旧动作、具体业务授权、请求去重，以及已提交但结果未知时禁止盲重放。缺条件时用现有暂停/用户交接解决，不为每个模块复制检查链。
+- 首版恢复只做持久请求/当前计划/控制水位与操作账本对账、重连后重新观察；无法判断既有副作用时保持暂停并交用户核查。复杂自动补偿、跨任意历史节点恢复、分布式租约/多 worker、通用策略 DSL 和全场景异常矩阵推迟；不因此删除已有未知结果屏障。
+- 不为未实现能力建立影子执行器、并行存储真相或仅供演示的业务结果。模块接口用当前消费者需要的字段即可；测试替身只用于明确标注的测试，不能冒充真实 App 验收。
 
 建议代码目录为 `agent/{runtime,planning,messages,skills,tools,phone,storage}`、`patches/`、`skills/`、`app_profiles/`、`tests/`；新增交互层建议使用 `web/` 与 `agent/api/`。这些是拟定目录，当前尚无产品实现骨架。`phone` 复用现有驱动并提供薄适配；`patches` 仅保存固定上游版本所需的有限修改，不默认新建完整 `android-bridge` 工程。没有日历或外卖业务数据接口。新增 HTTP/SSE 接入语义以[交互应用设计](2026-09-21-interaction-app-design.md)为准。
 
@@ -30,12 +67,12 @@
 - `request_revision`：用户对目标/约束的版本。
 - `plan_revision`：经过校验的业务 DAG 版本。
 - `node_id`：一个目标级工作项；`attempt_id` 标识其尝试。
-- `operation_id`：一个真实副作用意图；重试不得随意换 ID。
+- `operation_id`：一个真实副作用意图；恢复、重复请求及核查不换 ID，未知结果不能靠新 ID 绕过。
 - `session_id + session_epoch`：副屏生命周期；重建即失效。
 
-RequestInterpreter 输出包含 `original_text`、`normalized_goal`、`intent`、`constraints`、`resolved_references`、`missing_slots`、`target_task_id`、`source_message_ids`。意图取值为 `ASK / NEW_TASK / MODIFY / CANCEL / APPROVE / STATUS / SUPPLY_INFO`；领域标签用于选 skill，不是业务 workflow 路由器。
+RequestInterpreter 输出包含 `original_text`、`normalized_goal`、`intent`、`constraints`、`resolved_references`、`missing_slots`、`target_task_id`、`source_message_ids`、`input_artifact_ids`、`field_candidates`。无图片时后两项可为空；字段候选保留 `field_name,raw_value,normalized_value,source_artifact_id,source_excerpt,ambiguities`，尚未确定的关键字段不能编造。意图取值为 `ASK / NEW_TASK / MODIFY / PAUSE / RESUME / CANCEL / APPROVE / STATUS / SUPPLY_INFO`；暂停/继续按钮直接走控制接纳，不等待模型分类。领域标签用于选 skill，不是业务 workflow 路由器。
 
-MVP 一个 conversation 最多一个活动任务，一个设备最多一个执行会话。新的独立任务明确排队或替换，不隐式并行抢同一副屏。
+MVP 全局最多一个活动任务，一个设备最多一个执行会话。已有活动任务时，新独立请求返回忙碌/澄清；只有用户明确结束或取消旧任务后才接纳替换，不实现任务队列，也不隐式并行抢同一副屏。旧任务的未决副作用仍按第 7 节保留核查屏障。
 
 ### 2.1 持续维护的运行状态
 
@@ -56,6 +93,8 @@ Agent 是有状态运行时。下表描述逻辑字段及其权威归属，`Runt
 
 ## 3. 业务 DAG schema
 
+`TaskPlan` 是完整任务计划的类型名，下文简写为 `Plan`；`PlanPatch` 是对它的版本化变更，不是另一张 LangGraph 图。
+
 示例为计划片段，不表示只支持会议业务；`phone.*` 的具体动作在 agent_step 内根据页面选择。
 
 ```json
@@ -72,7 +111,7 @@ Agent 是有状态运行时。下表描述逻辑字段及其权威归属，`Runt
       "kind": "agent_step",
       "goal": "查指定日期的会议并报告冲突",
       "depends_on": [],
-      "inputs": {"date": {"from": "request", "path": "/resolved_date"}},
+      "inputs": {"date": {"from": "request", "path": "/constraints/resolved_date"}},
       "capabilities": ["phone.observe", "phone.launch_app", "phone.tap", "phone.swipe", "phone.back"],
       "resources": ["device:bound-session"],
       "completion_criteria": ["目标日期已核对", "可见会议的时间与主题已记录"],
@@ -83,7 +122,7 @@ Agent 是有状态运行时。下表描述逻辑字段及其权威归属，`Runt
       "kind": "agent_step",
       "goal": "按已明确的主题和时间创建会议",
       "depends_on": ["inspect_schedule"],
-      "inputs": {"schedule": {"from": "node", "node_id": "inspect_schedule", "path": "/result"}},
+      "inputs": {"schedule": {"from": "node", "node_id": "inspect_schedule", "path": "/outputs/schedule"}},
       "capabilities": ["phone.observe", "phone.tap", "phone.set_text", "phone.back"],
       "resources": ["device:bound-session"],
       "completion_criteria": ["从列表重新打开会议", "主题和起止时间一致", "会议号可见"],
@@ -95,9 +134,11 @@ Agent 是有状态运行时。下表描述逻辑字段及其权威归属，`Runt
 
 计划前完成相对日期解析及缺失槽位确认；schema 示例省略了运行时填充的具体日期和完整参数。技能哈希由目录解析，不由模型自由写字符串。输入引用是受限 JSON 路径，不允许表达式执行、任意模板、文件路径或 Python 代码。
 
+`from=request` 的路径根为已接纳的 NormalizedRequest；`from=node` 的根为已核验的前驱 NodeResult。本例日期保存于 `constraints.resolved_date`，查询节点输出 `outputs.schedule`，字段尚不可用时不得把引用当值传给后继。
+
 校验器必须检查：节点 ID 唯一、依赖存在且无环、引用只能访问允许的祖先输出/请求、required outputs 可用、工具存在且权限足够、会话绑定正确、预算有限、提交动作有授权核验路径、每个目标有可观察成功条件。
 
-图的 `plan` 与实际 `node_runs` 分开。状态至少有 `PENDING / READY / RUNNING / WAITING / SUCCEEDED / FAILED / BLOCKED / CANCELLED / OUTCOME_UNKNOWN`。前驱的目标与证据验证通过后才允许后继 ready，不能把“工具没抛异常”当作任务成功。
+图的 `plan` 与实际 `node_runs` 分开。节点状态 `NodeStatus` 至少有 `PENDING / READY / RUNNING / WAITING / SUCCEEDED / FAILED / BLOCKED / CANCELLED / OUTCOME_UNKNOWN`，不充当任务级 TaskStatus。前驱的目标与证据验证通过后才允许后继 ready，不能把“工具没抛异常”当作任务成功。
 
 ## 4. 调度、并发和修改协议
 
@@ -129,7 +170,7 @@ PhoneBackend 独占 Appium session 和 scrcpy 控制通道，经本机 ADB 连�
 
 Observation 包含：`observation_id, session_epoch, display_id, package, activity, windows, frame_id, captured_at, tree_captured_at, frame_captured_at, viewport, rotation, screenshot_ref, tree_ref, semantic_snapshot_ref`。设备端在序列化前过滤非目标 display 的窗口、节点及事件内容；画面取自 scrcpy 绑定副屏。树与帧不是原子快照，分别记录采集时间；窗口/旋转/画面不一致时重新观察。节点 ID 只在对应观察世代有效，不将 Appium 元素缓存当作跨页面或跨恢复的稳定句柄。
 
-新增上传建议使用独立 `InputArtifact`：`artifact_id, source=user_upload, content_hash, mime_type, dimensions, source_message_id`。它没有 display、epoch 或 frame，不能作为 `phone.*` 动作定位的 Observation；图片提取结果只生成业务字段，设备交互另取新观察。
+新增上传建议使用独立 `InputArtifact`：`artifact_id, source=user_upload, content_hash, mime_type, dimensions, source_message_id?`。上传阶段尚无消息，`source_message_id` 可为空；消息接纳时在 RunStore 建立消息与附件的来源关联，执行器只消费已绑定请求的材料。不可变约束作用于文件内容，不要求上传前先创建业务任务。它没有 display、epoch 或 frame，不能作为 `phone.*` 动作定位的 Observation；图片提取结果只生成业务字段，设备交互另取新观察。
 
 动作请求至少包含 `session_ref, observation_id, target, args, expected_package, expected_precondition`。执行前检查 epoch、App、窗口、旋转和目标新鲜度；页面变化则重新观察并重新定位。坐标以对应截图的尺寸/旋转解释，不能把旧图坐标直接打到新页面。
 
@@ -198,9 +239,11 @@ AppProfile 保存已验证包名/版本、启动行为、可用控件语义、�
 
 策略区分观察、导航、编辑草稿、持久创建/修改、外发/订单提交、支付。级别来自工具和 AppProfile 当前上下文，而非仅靠模型填写的风险标签。已有用户指令足够明确并覆盖参数时可直接执行；缺少信息或授权才暂停。
 
-ActionProposal 至少记录 `operation_id, target, canonical_args_hash, amount/address/items/time_scope, task_id, granted_plan_revision, policy_version, evidence_refs`。授权绑定动作摘要、允许范围和有效期，版本记录其来源。无关 replan、复核价格但金额未变时可重新验证并复用；换地址、换商品或金额/其他条件超出原授权范围时失效，记录覆盖关系的验证结果。
+ActionProposal 至少记录 `proposal_id, operation_id, target, canonical_args, canonical_args_hash, task_id, granted_plan_revision, policy_version, evidence_refs`。`canonical_args` 保存供用户审阅的精确参数，按业务包含金额、地址、商品、对象、时间或内容；摘要从同一份参数生成，不只保存无法还原展示内容的 hash。授权绑定这些参数、允许范围和有效期，版本记录其来源。无关 replan、复核价格但金额未变时可重新验证并复用；换地址、换商品或金额/其他条件超出原授权范围时失效，记录覆盖关系的验证结果。首版用当前工具/AppProfile 的少量明确检查实现，不把这些字段扩展成策略语言。
 
-提交前账本记录 `PREPARED → STARTED`；观察确认后为 `CONFIRMED`，明确未执行为 `FAILED`，提交后超时为 `OUTCOME_UNKNOWN`。同一操作重启或重试复用 operation ID；GUI 没有可靠服务端幂等键，本地 ID 不能消除重复下单风险。
+Gateway 在提交前向账本记录 `PREPARED → STARTED`；收到核验依据后登记 `CONFIRMED`，明确未执行为 `FAILED`，提交后超时为 `OUTCOME_UNKNOWN`。核验观察可由 GuiExecutor 或恢复路径请求，操作状态更新仍通过 Gateway/OperationLedger；Coordinator 接纳节点/任务结果，不把一次工具返回直接记成任务成功。同一操作恢复、重复请求及核查复用 operation ID；GUI 没有可靠服务端幂等键，本地 ID 不能消除重复下单风险。
+
+MVP 不自动重试真实业务提交；局部重试预算用于观察/定位等步骤，不含重新点击保存、下单、发送或付款。账本 FAILED 是有证据确认未生效或派发前放弃的终态；确需重做时由新的用户请求明确发起，保留对原失败操作的关联并重新核对实际页面和授权。未知结果不能走这一出口。这样无需首版实现一套提交重试状态机。
 
 核验流程是实际重新打开 App 的列表/详情：日历比较时间、标题和位置；会议比较主题、时间及可见会议号；订单比较商家、商品、总价、地址摘要、创建时段与可见订单标识。日历 UI 不显示 event ID 时，保存可见字段与截图，不伪造系统 event ID。
 
