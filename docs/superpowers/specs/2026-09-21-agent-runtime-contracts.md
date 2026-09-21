@@ -120,7 +120,9 @@ PhoneSession 由可信执行器创建并注入：`device_serial, android_user, d
 
 PhoneBackend 独占 Appium session 和 scrcpy 控制通道，经本机 ADB 连接固定 serial。Appium 只绑定宿主 loopback，手机端服务限本地 ADB 转发通路；不开放外部 HTTP/广播，不开启任意 shell 等宽松功能。现有驱动的 session ID 不能冒充认证；网关隔离原始驱动入口，所需会话凭证/设备端绑定校验由有限补丁补齐并在 G1 验收，尚非上游默认能力。凭证不进入模型、公共日志或 skills。
 
-模型只调用 `phone.*`，不能任意执行 Appium 命令、修改 settings、使用旧 `-android uiautomator` 选择器、切换 WebView context 或读全局日志。设备端保持绑定 display/epoch，拒绝非目标窗口节点、失效显示与未绑定请求；电脑端 guard 不能代替这一检查。
+同一 Android 实例只建立一个 UiAutomation/Appium 会话服务副屏。用户在主屏的普通触摸和软键盘输入不属于第二个自动化会话；运行期间不能并行启动 `uiautomator dump` 或另一个 UiAutomation instrumentation。
+
+模型只调用 `phone.*`，不能任意执行 Appium 命令、修改 settings、使用旧 `-android uiautomator` 选择器、切换 WebView context 或读全局日志。设备端保持绑定 display/epoch，拒绝非目标窗口节点、失效显示与未绑定请求；电脑端 guard 不能代替这一检查。节点刷新后读取 `node.getWindow().getDisplayId()`；`UiObject2Element.getDisplayId()` 返回构造时缓存值，不能独自证明当前窗口归属。
 
 Observation 包含：`observation_id, session_epoch, display_id, package, activity, windows, frame_id, captured_at, viewport, rotation, screenshot_ref, tree_ref`。设备端在序列化前过滤非目标 display 的窗口、节点及事件内容；画面取自 scrcpy 绑定副屏。树与帧不是原子快照，窗口/旋转/画面不一致时重新观察。节点 ID 只在对应观察世代有效，不将 Appium 元素缓存当作跨页面或跨恢复的稳定句柄。
 
@@ -137,8 +139,10 @@ scrcpy 整个运行会话固定 `clipboard_autosync=false`，控制消息白名�
 Appium 启动配置属于可信部署配置，模型不可改写：
 
 - 准备期安装/初始化 instrumentation；任务期固定 `autoLaunch=false`、`noReset=true`、`forceAppLaunch=false`、`shouldTerminateApp=false`、`skipUnlock=true`、`skipLogcatCapture=true`、`disableSuppressAccessibilityService=true`，不在用户使用时执行自动安装、清数据或改系统动画等准备动作。
+- 显式管理 `newCommandTimeout` 与会话生命周期。机制探针设为 180 秒，覆盖其 60 秒无副屏命令基线；这不是 HTTP/动作超时。正式运行长时间等待用户时可关闭会话，恢复须重绑和重新观察，不能沿用已过期 session/元素。
 - 省略 `hideKeyboard`，禁用 `unicodeKeyboard` 与全局剪贴板工具；`hideKeyboard=false` 仍会重置全局 IME。准备完成后才考虑 `skipDeviceInitialization` 等跳过选项，不能用它们掩盖未完成初始化。
 - Gate 关闭时绑定非零 `currentDisplayId`，固定 `enableMultiWindows=true` 并回读核验；全局 Toast 文本采集从 server 启动即禁用，不依赖事后关监听的缓存过期。
+- 固定 `waitForIdleTimeout=0`，避免主屏持续产生的无障碍事件使副屏查询等待全局空闲。用副屏明确的前置条件和写后读回决定能否继续；不把关闭 idle 等待理解为所有动作没有超时或目标 App 必然响应。
 - Appium 默认 display 为 0，`-1` 可重置设置；server 新会话/重连必须先重新绑定，设备端绑定校验未通过就拒绝观察和动作。旧元素引用随会话世代失效。
 - 默认 Appium gesture 注入存在定向设置失败后继续执行的路径；首版复用 scrcpy 的失败即拒绝通道。以后启用 Appium gesture 必须先修该路径和节点窗口为空回落 display 0 的行为，再单独验收。
 

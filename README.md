@@ -1,6 +1,6 @@
 # Wellphone
 
-用户在 Android 主屏刷屏、打字，Agent 在**同一个 Android 实例的虚拟副屏**操作真实 App。**当前仅完成调研与设计，尚无可运行程序或设备实验结果。** 开发与演示以单个官方 Android 模拟器为主，真机可选。
+用户在 Android 主屏刷屏、打字，Agent 在**同一个 Android 实例的虚拟副屏**操作真实 App。**已通过原生控件与合成 IME 的并发机制探针；通用 Agent、真人输入和真实 App 尚未验收。** 开发与演示以单个官方 Android 模拟器为主，真机可选。
 
 候选方案：LangGraph 通用编排 + LangChain 消息/模型适配 + 可修改的任务 DAG + 外置 skills + Appium/scrcpy 受控 GUI 工具。计划演示行程截图转日历（VLM 直接识别）、查询/创建腾讯会议、按需求点外卖；三者共用执行器，通过真实 App 界面完成，不接业务 API。**先做无需 LLM 的副屏与真实 App 预检，通过后再实现 Agent 内核。**
 
@@ -34,5 +34,6 @@ flowchart LR
 - [主设计](docs/superpowers/specs/2026-09-21-wellphone-design.md) · [运行时契约](docs/superpowers/specs/2026-09-21-agent-runtime-contracts.md)：工具、skills、DAG/replan、消息和恢复。
 - [本轮资料核验](docs/research/2026-09-21-agent-runtime-and-gui-research.md) · [平台研究与历史路线](docs/research/2026-09-21-platform-research.md)：三份用户参考及官方源码依据。
 - [验证与演示计划](docs/validation/2026-09-21-feasibility-and-demo.md)：实验门槛、三个演示、7 天安排和未通过时的处理。
+- [实测报告](docs/validation/2026-09-21-appium-concurrency-probe.md) · [探针部署步骤](experiments/display_concurrency/README.md)：60 秒主屏合成输入期间，副屏完成 141 轮读树/中文填写/读回/点击；保留限制与失败记录。
 
 范围：单用户、单进程、单 AVD、单副屏、单活动任务；只承诺通过实测的 App/页面。模拟器验证不等于原题的物理手机部署，该项有设备后补验。

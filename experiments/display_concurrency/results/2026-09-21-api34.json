@@ -1,0 +1,363 @@
+{
+  "date": "2026-09-21",
+  "run": "run-003",
+  "scope": "single API34 AVD; synthetic ProbeIME/native EditText; not human or real business app acceptance",
+  "environment": {
+    "serial": "emulator-5580",
+    "build_fingerprint": "Android/sdk_phone64_x86_64/emu64x:14/UE1A.230829.036.A1/11228894:userdebug/test-keys",
+    "emulator": "37.1.11",
+    "platform_tools": "37.0.1",
+    "compile_sdk": 36,
+    "build_tools": "36.0.0",
+    "jdk": "21.0.7",
+    "main_dimensions": "720x1280/240",
+    "secondary_dimensions": "720x1280/240",
+    "appium": "3.7.0",
+    "appium-uiautomator2-driver": "8.7.0",
+    "appium-android-driver": "14.2.0",
+    "appium-uiautomator2-server": "10.6.6",
+    "node": "v24.20.0",
+    "python": "Python 3.13.13",
+    "artifact_sha256": {
+      "scrcpy-server": "a16e9d26e6b132c6885e851eeb8e9c9a25588fa6c7b3b26904b396cb9bc56c68",
+      "probe-agent.apk": "0929966d24f7d071262a200ab2fc0ea3dc5b83362020a1743bec77f48194de71",
+      "probe-main.apk": "9f23de6affdb53034dacc1287e860a64006cff4026cbca8893fda3644ba79cbe",
+      "probe-ime.apk": "a20fea9a955cfe4db1b6df4e91f80bff4e6ee2174e24beafce12af7135d4abbd",
+      "appium-uiautomator2-server-debug-androidTest.apk": "e6f729287d72351388fd66597c35b69988b9091a7011954bf92a55d416cb1e1c",
+      "appium-uiautomator2-server-v10.6.6.apk": "8ff760a2a86b487f53090fbdcd5b0360e67d02bb811887d527a9557b0d59c80d"
+    }
+  },
+  "settings": {
+    "currentDisplayId": 5,
+    "enableMultiWindows": true,
+    "enableNotificationListener": false,
+    "waitForIdleTimeout": 0
+  },
+  "newCommandTimeout_seconds": 180,
+  "analysis": {
+    "runner_completed": true,
+    "errors": [],
+    "declared_scope": "synthetic ProbeIME + adb input -d 0, not human/pinyin",
+    "phases": [
+      {
+        "name": "baseline",
+        "requested_seconds": 60.0,
+        "started_ns": 1566572664950118,
+        "completed_cycles": 87,
+        "agent_rounds": 0,
+        "elapsed_seconds": 60.63438305,
+        "input_error": null,
+        "checks": {
+          "main_text_exact": true,
+          "main_display_0": true,
+          "main_instance_unchanged": true,
+          "main_focused": true,
+          "no_window_focus_loss": true,
+          "no_input_connection_recreation": true,
+          "ime_target_main": true,
+          "ime_session_unchanged": true,
+          "no_ime_rejection_or_switch": true,
+          "main_continuous_focus_and_instance": true,
+          "ime_continuous_session": true
+        }
+      },
+      {
+        "name": "concurrent",
+        "requested_seconds": 60.0,
+        "started_ns": 1566634017599921,
+        "completed_cycles": 79,
+        "agent_rounds": 141,
+        "elapsed_seconds": 60.648134183,
+        "input_error": null,
+        "checks": {
+          "main_text_exact": true,
+          "main_display_0": true,
+          "main_instance_unchanged": true,
+          "main_focused": true,
+          "no_window_focus_loss": true,
+          "no_input_connection_recreation": true,
+          "ime_target_main": true,
+          "ime_session_unchanged": true,
+          "no_ime_rejection_or_switch": true,
+          "main_continuous_focus_and_instance": true,
+          "ime_continuous_session": true
+        }
+      },
+      {
+        "name": "idle-10000-comparison",
+        "http_timeout_seconds": 15,
+        "source_returned": true,
+        "elapsed_seconds": 10.70499259699136,
+        "completed_cycles": 16,
+        "checks": {
+          "main_text_exact": true,
+          "main_display_0": true,
+          "main_instance_unchanged": true,
+          "main_focused": true,
+          "no_window_focus_loss": true,
+          "no_input_connection_recreation": true,
+          "ime_target_main": true,
+          "ime_session_unchanged": true,
+          "no_ime_rejection_or_switch": true,
+          "main_continuous_focus_and_instance": true,
+          "ime_continuous_session": true
+        }
+      }
+    ],
+    "display_flags": {
+      "display_id": 5,
+      "flags": 8072
+    },
+    "cross_phase_checks": {
+      "main_text_exact": true,
+      "main_display_0": true,
+      "main_instance_unchanged": true,
+      "main_focused": true,
+      "no_window_focus_loss": true,
+      "no_input_connection_recreation": true,
+      "ime_target_main": true,
+      "ime_session_unchanged": true,
+      "no_ime_rejection_or_switch": true,
+      "main_continuous_focus_and_instance": true,
+      "ime_continuous_session": true
+    },
+    "http_requests": 717,
+    "fixture_events": 3661,
+    "reported_main_check_count": 5,
+    "reported_main_check_failures": [],
+    "independent_continuity_violations": [],
+    "independent_continuity_events": 2946,
+    "main_initial_final": {
+      "pid": {
+        "first": 2324,
+        "last": 2324
+      },
+      "instance": {
+        "first": 95066299417,
+        "last": 95066299417
+      },
+      "display_id": {
+        "first": 0,
+        "last": 0
+      },
+      "input_connections": {
+        "first": 1,
+        "last": 1
+      },
+      "window_focus_lost": {
+        "first": 0,
+        "last": 0
+      }
+    },
+    "ime_initial_final": {
+      "pid": {
+        "first": 2366,
+        "last": 2366
+      },
+      "instance": {
+        "first": 95765671041,
+        "last": 95765671041
+      },
+      "target_package": {
+        "first": "com.wellphone.probe.main",
+        "last": "com.wellphone.probe.main"
+      },
+      "field_id": {
+        "first": 2130771969,
+        "last": 2130771969
+      },
+      "input_starts": {
+        "first": 2,
+        "last": 2
+      },
+      "input_finishes": {
+        "first": 1,
+        "last": 1
+      },
+      "view_starts": {
+        "first": 1,
+        "last": 1
+      },
+      "view_finishes": {
+        "first": 0,
+        "last": 0
+      }
+    },
+    "input_cycle_end_counts": {
+      "baseline": 87,
+      "concurrent": 79,
+      "idle-10000-comparison": 16
+    },
+    "main_action_verified_counts": {
+      "setup": 4,
+      "baseline": 348,
+      "concurrent": 316,
+      "idle-10000-comparison": 64
+    },
+    "agent_readback_counts": {
+      "setup": 1,
+      "concurrent": 141
+    },
+    "agent_counter_counts": {
+      "concurrent": 141
+    },
+    "interleaving": {
+      "concurrent_agent_readbacks": 141,
+      "readbacks_inside_complete_main_cycles": 141,
+      "complete_main_cycles_containing_agent_readback": 79,
+      "readbacks_with_latest_logged_main_composition_active": 71,
+      "timestamp_basis": "host receive timestamps, not synchronized device/HTTP execution timestamps"
+    },
+    "timings_ms": {
+      "setup/other": {
+        "count": 3,
+        "mean": 494.71,
+        "median": 13.11,
+        "min": 9.61,
+        "max": 1461.41
+      },
+      "setup/source": {
+        "count": 1,
+        "mean": 45.92,
+        "median": 45.92,
+        "min": 45.92,
+        "max": 45.92
+      },
+      "setup/find": {
+        "count": 2,
+        "mean": 48.49,
+        "median": 48.49,
+        "min": 21.55,
+        "max": 75.43
+      },
+      "setup/replace": {
+        "count": 1,
+        "mean": 37.02,
+        "median": 37.02,
+        "min": 37.02,
+        "max": 37.02
+      },
+      "setup/readback": {
+        "count": 1,
+        "mean": 9.67,
+        "median": 9.67,
+        "min": 9.67,
+        "max": 9.67
+      },
+      "concurrent/source": {
+        "count": 141,
+        "mean": 131.43,
+        "median": 120.72,
+        "min": 60.86,
+        "max": 292.65
+      },
+      "concurrent/find": {
+        "count": 282,
+        "mean": 53.67,
+        "median": 49.87,
+        "min": 15.78,
+        "max": 177.29
+      },
+      "concurrent/replace": {
+        "count": 141,
+        "mean": 72.24,
+        "median": 66.45,
+        "min": 39.52,
+        "max": 155.87
+      },
+      "concurrent/readback": {
+        "count": 141,
+        "mean": 27.5,
+        "median": 22.09,
+        "min": 9.23,
+        "max": 109.33
+      },
+      "idle-10000-comparison/other": {
+        "count": 2,
+        "mean": 8.43,
+        "median": 8.43,
+        "min": 7.9,
+        "max": 8.97
+      },
+      "idle-10000-comparison/source": {
+        "count": 1,
+        "mean": 10104.64,
+        "median": 10104.64,
+        "min": 10104.64,
+        "max": 10104.64
+      },
+      "cleanup/other": {
+        "count": 1,
+        "mean": 278.35,
+        "median": 278.35,
+        "min": 278.35,
+        "max": 278.35
+      }
+    },
+    "source_count": 143,
+    "sources_containing_main_package": [],
+    "metadata_values": {
+      "mTopFocusedDisplayId=": {
+        "mTopFocusedDisplayId=0": 69
+      },
+      "mCurClient=": {
+        "mCurClient=ClientState{17d5d74 mUid=10141 mPid=2324 mSelfReportedDisplayId=0} mCurSeq=4": 69
+      },
+      "mCurMethodId=": {
+        "mCurMethodId=com.wellphone.probe.ime/.ProbeIme": 69
+      },
+      "mCurTokenDisplayId=": {
+        "mCurTokenDisplayId=0": 69
+      }
+    },
+    "metadata_files": 138
+  },
+  "video": {
+    "decoded_frames": 974,
+    "width": 720,
+    "height": 1280,
+    "codec": "H264 Constrained Baseline",
+    "bytes": 6691155,
+    "decode_exit_code": 0,
+    "decode_warnings": 0,
+    "duration": "raw stream has no wall-clock timestamps"
+  },
+  "prior_runs": [
+    {
+      "run": "run-001",
+      "result": "probe assertion defect: DisplayInfo.toString omits focus flag names; Appium not started",
+      "fix": "read numeric flags; required bits0x1880 and forbidden PRIVATE0x4"
+    },
+    {
+      "run": "run-002",
+      "result": "default Appium inactivity timeout60s expired during deliberate main-only baseline",
+      "fix": "newCommandTimeout180s; no HTTP/action timeout change",
+      "narrow_result": "held composition write and main baseline87 cycles passed; concurrent0 rounds"
+    }
+  ],
+  "evidence_sha256": {
+    "events.jsonl": "e95e06257e92cd851a7fec6f932aa84e47226953bc36eef6130275ddcf1f90cc",
+    "summary.json": "a58e2125bd1e6e89f922e66f32e503cad7c1c1ced8e28b71ac8f13ba4b0e92fe",
+    "fixtures.log": "1ed63ea11e69751ffc3610640fcbea0ad94a3c7d9fa2759a0c0e6539a7c20196",
+    "display-flags.json": "cf8f73d4ac9fcc4dfa70235ed8bc523a8085596754b8c8d6c3d1f52ed825954d",
+    "scrcpy/secondary.h264": "6f683782ab8bced3652ed7a129b6ca2ac010805561d8622e39426d4e83b797b6"
+  },
+  "probe_source_sha256": {
+    "DisplayFlags.java": "291ed59b6716435f0d7384d64737da1286c1113ff8b3aa463089c6d1f7196327",
+    "analyze_results.py": "bfcd2ba1e447fdcbeab6bb690614eba90b49dba0f5b871f54c7724aff8b20a68",
+    "build_flags.sh": "387c448abcc67b4416ebb90d37e351273b128b66f5c4cb078f1ee19ddb8217a2",
+    "fixtures/agent/AndroidManifest.xml": "9f1270998217ddb3438cc436a16d0854bfe78e50cdb5bda04fca698e1d3a4938",
+    "fixtures/build.sh": "70def6f50b4462c31ae797f6970ccd9ecadf85283c32c9173569fe4d06216e51",
+    "fixtures/common/res/values/ids.xml": "d2efe748dba71bf1a6716cfb0332713a5fab0ec6d02d01a3ab3a0a89e1767b72",
+    "fixtures/common/src/com/wellphone/probe/ProbeActivity.java": "8d4921a104264432f8cbae6f7d436214726bc0b9796c7b6f0d7903785113be61",
+    "fixtures/ime/AndroidManifest.xml": "20454151b2cc94fdee4053a693c0188fef7110444f636d54c3f3dc1d7da0ebf2",
+    "fixtures/ime/res/values/strings.xml": "f647ba7179b2bb381a24f0a937130409cc1887e8b6de2debc05984348ad8fbb6",
+    "fixtures/ime/res/xml/method.xml": "4579a5b8d65329105a5a0bcf44d472c5e87873240e512cafed2064633db726df",
+    "fixtures/ime/src/com/wellphone/probe/ime/ProbeIme.java": "0a0d52085d207432cf560e68d0b231975d92e0d8e85817a23be74cd9cb2f6e76",
+    "fixtures/main/AndroidManifest.xml": "3aecd106ff49a5bc77cf2235bed54fd7b613044bcce91c49fe737c5d736aaef1",
+    "run_probe.py": "60c501da87d9a2c7355f2fa672bb957488ea0cbc0c9d3afe7a182ede959060ba",
+    "scrcpy_probe.py": "ce7db4742e66aae07c19c839e5658192f9a256bc5a84c49313f3d76ce1ab819a",
+    "steal-top-focus-disabled.patch": "e970568807e4492abe440925d2aef0f95a753d06ae16a38ee9a455d88b69288e",
+    "test_probe_protocol.py": "b28e75905794db09662e0b268b39e5dac704e34bd0cd14c3b645f3eae10cf714"
+  }
+}

@@ -1,6 +1,6 @@
 # V2 验证计划：副屏隔离、通用 Agent 与三个真实 App
 
-日期：2026-09-21。**全部为待执行计划，尚无设备实验结果。** 当前交付范围是单 Android 模拟器实例，真机可选；三个业务均通过 GUI，不以业务 API 或系统数据写入替代。
+日期：2026-09-21。**已完成原生控件/合成 IME 的副屏并发机制子实验；完整 G0–G6 仍未通过。** [实测报告](2026-09-21-appium-concurrency-probe.md)记录 60 秒并发、版本、两个配置失败及未验收项。当前交付范围是单 Android 模拟器实例，真机可选；三个业务均通过 GUI，不以业务 API 或系统数据写入替代。
 
 ## 1. 验证顺序与门槛
 
@@ -38,7 +38,7 @@ apkanalyzer manifest print base.apk
 
 环境就绪后先设一个工作日的预检投入窗口，在半天与一天时检查证据；这是控制投入的检查点，不是承诺一天解决所有兼容问题。P2 失败时先定位镜像/flag/控件层，不开始 Agent 内核；只有个别 App 的 P3 失败则单独标阻碍并重新判断该演示范围。不得未经说明换成业务 API 或另一台逻辑设备。
 
-本轮宿主机检查：Linux x86_64，`/dev/kvm` 可读写，KVM API 返回 12 且空 VM 创建/关闭成功；约 49 GiB 可用磁盘，存在图形会话变量。当前 PATH 与常用 SDK 目录未发现 adb、emulator、sdkmanager、scrcpy 或现成 AVD。以上只验证了宿主 KVM 条件，**未安装/启动 Android，P1–P3 尚未执行**。
+环境已推进：本地缓存安装了 SDK、Emulator、JDK 与 Appium，启动一个 API 34 AVD，构建 scrcpy 禁抢焦点补丁和原生夹具，完成 P2 的合成输入机制子实验。P1/P3 的真实 App 页面、P2 的真人拼音及生产隔离边界仍待验证；不能以此更新降低下方 G1/G2/G3 条件。实际镜像与产物版本以实测报告为准。
 
 ### 1.2 完整验收链
 
@@ -59,6 +59,7 @@ G0–G6 是模拟器版的验收链。三个 App 的 G3/G5 分别记录，不能
 
 - 检查 `PUBLIC + TRUSTED + OWN_FOCUS + STEAL_TOP_FOCUS_DISABLED` 实际生效；区分 VirtualDisplay flag 和 Display flag。不把现有 scrcpy CLI 开关当成已完成补丁。
 - 固定 Appium driver/server/AndroidX 版本组合；`currentDisplayId` 绑定副屏、`enableMultiWindows=true`，检查原始 XML 在设备内已过滤主屏。生成主屏独有文本/Toast，确认树、日志和模型观察中均不泄露其内容；Toast 禁采集从启动生效，不能只等待缓存过期。
+- 正式候选设置 `waitForIdleTimeout=0`，以副屏状态检查替代全局 idle；机制实验已观察到默认设置约 10 秒的 source 等待。显式管理 session 的 `newCommandTimeout`；不把用户/模型等待导致的过期会话当作有效连接。
 - 原始 Appium 入口仅限可信适配层；经本机 ADB 通路鉴别会话。错误令牌、旧 epoch、其他设备/包名和 display 0 请求均拒绝；server 重启/重连后 gate 保持关闭直到重新绑定通过。
 - 对比 Appium 启停前后的默认 IME、已启用无障碍服务、App/task 与主屏焦点；不自动启动/重置 App、解锁、改动画、切 IME 或抓取全局 logcat。设置 `disableSuppressAccessibilityService=true`；省略 `hideKeyboard`，不能以 false 替代省略。
 - 控件定位/替换文本复用 Appium；触控和 Back/Enter 走 scrcpy 定向通道。分别验证真实换行与字面反斜杠加 n 尾缀都不会触发全局 Enter；节点窗口为空、目标显示消失、绑定未建立都返回错误，不注入主屏。

@@ -1,0 +1,8 @@
+--- a/server/src/main/java/com/genymobile/scrcpy/video/NewDisplayCapture.java
++++ b/server/src/main/java/com/genymobile/scrcpy/video/NewDisplayCapture.java
+@@ -43,0 +44 @@
++    private static final int VIRTUAL_DISPLAY_FLAG_STEAL_TOP_FOCUS_DISABLED = 1 << 16;
+@@ -231 +232,2 @@
+-                            | VIRTUAL_DISPLAY_FLAG_DEVICE_DISPLAY_GROUP;
++                            | VIRTUAL_DISPLAY_FLAG_DEVICE_DISPLAY_GROUP
++                            | VIRTUAL_DISPLAY_FLAG_STEAL_TOP_FOCUS_DISABLED;

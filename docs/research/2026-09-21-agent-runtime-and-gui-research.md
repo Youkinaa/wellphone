@@ -1,6 +1,6 @@
 # V2 研究：通用编排、外置技能与真实 App 副屏操作
 
-核验日期：2026-09-21。方法：实际获取官方网页、官方 Doc/源码和项目实现；不是只阅读项目简介。**没有启动模拟器、登录 App、调用模型/业务 API 或执行真实任务。** 下文“事实”来自资料，“决定”是本项目设计，“待测”不能写成已实现能力。
+核验日期：2026-09-21。方法：实际获取官方网页、官方 Doc/源码和项目实现；不是只阅读项目简介。初稿为资料研究，随后补做了[同机并发机制实验](../validation/2026-09-21-appium-concurrency-probe.md)：**指定 AVD 的原生控件/合成 IME 路径通过；没有真人输入、真实业务 App、模型/业务 API 或真实任务结果。** 下文按来源区分资料事实、设计决定和设备证据。
 
 ## 结论与证据边界
 
@@ -8,10 +8,10 @@
 
 | 问题 | 本轮可以明确作出的判断 | 还需要什么证据 |
 | --- | --- | --- |
-| 同一 Android 能否建立独立交互副屏 | 可以，scrcpy 与 AOSP 已有创建、取帧及定向输入机制 | 目标 AVD 的配置和运行记录 |
+| 同一 Android 能否建立独立交互副屏 | 可以，scrcpy 与 AOSP 已有创建、取帧及定向输入机制；指定 AVD 的原生控件探针已运行 | 真实 App 的兼容和完整隔离验收 |
 | 主副屏能否各使用一套普通软键盘 | 本方案核验的普通同用户 Android 14 路径不支持；单 IME 随最高焦点切换 | 不继续把“双 IME”当候选方案 |
 | 副屏无 IME 时能否写中文 | 标准可编辑 TextView 的 SET_TEXT 接收 CharSequence，直接修改内容；无需用拼音键盘模拟中文 | 真实控件暴露该动作且页面正确响应 |
-| SET_TEXT 的焦点请求是否必然抢主屏 | 不必然；已追完禁抢焦点、task 排序和 IME 拒绝路径，见 2.3 | 特定镜像和 App 无额外跨屏行为的集成实验 |
+| SET_TEXT 的焦点请求是否必然抢主屏 | 不必然；系统调用链及原生控件并发实验均支持这一判断，见 2.3 和实测报告 | 真人拼音及真实 App 无额外跨屏行为的集成实验 |
 | 目标 App 所有必要页面是否留副屏 | 有默认同屏启动规则，但已有 task、显式指定显示等可改变落点 | 无需 LLM 的真实页面预检，见 2.4 |
 
 选型结论：**“有明确系统实现依据的候选方案”，尚不是“目标 App 全部跑通的产品能力”。** 先完成[无 LLM 预检](../validation/2026-09-21-feasibility-and-demo.md)，再开发完整 Agent。
@@ -194,6 +194,8 @@ Maestro 来源：[官方 MCP](https://github.com/mobile-dev-inc/maestro/blob/c43
 
 本次核验 UiAutomator2 driver **8.7.0**、server **10.6.6**、appium-android-driver **14.0.8** 的源码；[driver 依赖](https://github.com/appium/appium-uiautomator2-driver/blob/7a54db007aa8a44f5df21cd0b52afc13c0d277ae/package.json#L63)为 server `^10.6.0` 和 android-driver `^14.0.8`，这是兼容范围，不是已经安装验证的 lockfile。部署时还需锁定实际 Appium/Node/客户端/传递依赖。
 
+后续机制实验的实际安装树为 Appium **3.7.0**、driver **8.7.0**、server **10.6.6**、android-driver **14.2.0**。重新核对了已安装代码中的 IME 初始化行为；不能把之前单独阅读的 14.0.8 写成实测版本，完整环境与产物哈希见实测报告。
+
 server 的 [AndroidX 依赖](https://github.com/appium/appium-uiautomator2-server/blob/4a8139161cbb3aad078e36539995eb734297d56e/gradle/libs.versions.toml#L28)固定 UI Automator **2.3.0**；虽官方目前另有 2.4.0，Appium 反射多个内部接口，不擅自升级替换。
 
 | 路径 | 源码证据 | 本项目使用方式 |
@@ -212,7 +214,18 @@ server 的 [AndroidX 依赖](https://github.com/appium/appium-uiautomator2-serve
 4. **手势的失败路径不同于正常能力。** AndroidX 2.3.0 GestureController 的 MotionEvent.setDisplayId 反射失败后仍继续，Appium [W3C 动作](https://github.com/appium/appium-uiautomator2-server/blob/4a8139161cbb3aad078e36539995eb734297d56e/app/src/main/java/io/appium/uiautomator2/utils/w3c/ActionsExecutor.java#L250)也有相同行为；节点 window=null 可回落0。[Back](https://github.com/appium/appium-uiautomator2-server/blob/4a8139161cbb3aad078e36539995eb734297d56e/app/src/main/java/io/appium/uiautomator2/utils/Device.java#L64)与普通 key 未绑定屏。首版只用 scrcpy 定向输入，不为所有 Appium 动作补实现。
 5. **启动也会改全局状态。** [initDevice](https://github.com/appium/appium-android-driver/blob/23da04d4111261c00f10c21ba19175ef6d41de03/lib/commands/device/common.ts#L279)中 hideKeyboard=true 切 EmptyIME，false 也会 ime reset；应省略。设置 disableSuppressAccessibilityService=true 保留用户已启用的无障碍服务，skipLogcatCapture=true 避免默认全局日志；自动 App 启停、解锁/准备动作也需关闭或移到准备期，完整配置见[运行时契约](../superpowers/specs/2026-09-21-agent-runtime-contracts.md#5-phonesessionobservation-与动作工具)。
 
-这些源码支持“复用后端并做有限适配”的判断，尚未构建补丁或执行设备实验。主屏持续活动还可能触发 UiAutomator 的全局 idle 等待，探针应记录树刷新/填写延迟，避免把正常单屏测试性能外推到并发场景。
+这些源码支持“复用后端并做有限适配”的判断，不等于原版 Appium 已满足完整隔离。全局 idle 等待、单会话限制和节点归属检查的进一步核验如下。
+
+### 7.4 同时操作：会话不互斥，但默认等待策略不合适
+
+本节仍区分源码机制和设备证据；AOSP 链接固定到与 2.3 相同的 Android 14 commit。
+
+- **人的普通触摸不占用第二个 UiAutomation。** [UiAutomationManager](https://github.com/aosp-mirror/platform_frameworks_base/blob/6e47c7075b91983ae501114425ea25e6df7690c8/services/accessibility/java/com/android/server/accessibility/UiAutomationManager.java#L88)限制的是同时注册第二个自动化服务；[UiAutomation 回调](https://github.com/aosp-mirror/platform_frameworks_base/blob/6e47c7075b91983ae501114425ea25e6df7690c8/core/java/android/app/UiAutomation.java#L1786)没有“用户触摸就暂停 Appium”的逻辑。一个 Appium session 操作副屏，用户使用主屏在机制上可并行；不要为两块屏启动两个 UiAutomation，也不要在 Appium 活跃时运行 `uiautomator dump`。
+- **`currentDisplayId` 不会让空闲检测只看副屏。** [UiAutomation](https://github.com/aosp-mirror/platform_frameworks_base/blob/6e47c7075b91983ae501114425ea25e6df7690c8/core/java/android/app/UiAutomation.java#L1791)按收到的所有无障碍事件更新同一个时间戳。AndroidX 2.3.0 的查询/节点刷新会等待全局静默，默认上限 10 秒；一次请求可能经过多次等待。主屏持续活动可以拖慢副屏，不是输入会话互斥。
+- **候选配置固定 `waitForIdleTimeout=0`。** Appium 的 [WaitForIdleTimeout](https://github.com/appium/appium-uiautomator2-server/blob/4a8139161cbb3aad078e36539995eb734297d56e/app/src/main/java/io/appium/uiautomator2/model/settings/WaitForIdleTimeout.java)会更新 AndroidX Configurator。跳过全局 idle 启发式后仍有节点 refresh、动作结果等待和读回；不能宣称零延迟或不需状态确认。
+- **显示守卫必须读当前窗口。** [UiObject2Element.getDisplayId](https://github.com/appium/appium-uiautomator2-server/blob/4a8139161cbb3aad078e36539995eb734297d56e/app/src/main/java/io/appium/uiautomator2/model/UiObject2Element.java#L172)取 AndroidX 创建元素时缓存的 display。设备端应刷新节点并读取 `node.getWindow().getDisplayId()`，窗口为空就拒绝；一次会话固定一个显示，重建废弃旧句柄。此处是代码审计发现的防护缺口，没有把潜在错路由描述为已观察到的故障。
+
+后续实测：60.65 秒内，主屏完成 79 轮合成 composing/commit，副屏完成 141 轮中文替换、读回与定向点击；记录中主屏焦点和 IME 连接未变。默认 idle 的单次 source 为 10.1 秒，idle=0 的 141 次中位数为 120.72 毫秒。原版 server 的 Toast/特殊尾缀/设备端守卫仍未补齐，因此这些结果只支持机制可行，不能宣称原版工具满足所有隔离要求。方法及两个探针配置失败见[实测报告](../validation/2026-09-21-appium-concurrency-probe.md)。
 
 ## 8. 本轮状态与视觉提取决策
 

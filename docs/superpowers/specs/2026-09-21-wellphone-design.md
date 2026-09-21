@@ -1,6 +1,6 @@
 # Wellphone V2：主屏给用户，副屏给通用 GUI Agent
 
-日期：2026-09-21。状态：**设计修订，尚未实现；已核验官方资料和源码，副屏、模型和真实 App 均未做运行验证。**
+日期：2026-09-21。状态：**通用 Agent 尚未实现；已通过同一 API 34 AVD 的原生控件/合成 IME 并发机制实验，真人输入、模型和真实 App 尚未验收。** 结果、限制与失败记录见[实测报告](../../validation/2026-09-21-appium-concurrency-probe.md)。
 
 本版取代首版“系统数据接口优先”的选型。用户已确认：主要在单个 Android 模拟器开发和演示，真机可选；已有外卖账号、地址和腾讯会议账号；不接业务 API，希望 Agent 通过副屏与真实 App 交互。
 
@@ -148,7 +148,7 @@ coordinator 唯一修改计划；旧 revision 的模型结果和 worker 回报�
 
 ## 8. 副屏实现及硬性边界
 
-候选底座为 scrcpy v4.1 + Android 14 AVD，shell 身份运行 server，副屏使用 `PUBLIC + TRUSTED + OWN_FOCUS + STEAL_TOP_FOCUS_DISABLED`。禁抢 top focus 的 VirtualDisplay flag 为 `1 << 16`；当前 scrcpy 需要修改并检查实际生效。先固定一个版本验证，避免同时扩展镜像兼容矩阵。
+候选底座为 scrcpy v4.1 + Android 14 AVD，shell 身份运行 server，副屏使用 `PUBLIC + TRUSTED + OWN_FOCUS + STEAL_TOP_FOCUS_DISABLED`。禁抢 top focus 的 VirtualDisplay flag 为 `1 << 16`；本轮已构建该单项补丁，并在指定 AVD 读取数值 flags 验证生效。原生控件机制通过不代表完整控制通道或真实 App 已验收；不同时扩展镜像兼容矩阵。
 
 “隐藏”指不占 Android 主屏，并非使用 `PRIVATE` display flag；AOSP 无障碍可能排除非系统持有的 PRIVATE 虚拟屏。电脑可以保留副屏预览。
 
@@ -165,6 +165,8 @@ coordinator 唯一修改计划；旧 revision 的模型结果和 worker 回报�
 Appium 是设备自动化驱动，MCP 是向 Agent 暴露工具的协议，两者不替代。首版 Python 运行时直接调用 Appium 客户端和 scrcpy 适配器即可；以后需要给其他 Agent 使用时，可在同一 Gateway 外加 MCP，不另造执行逻辑。现有 Mobile MCP、Maestro 和 Playwright Android 的默认通道不满足本项目副屏/主屏输入隔离，不能原样交给模型。
 
 Appium 会话在准备期建立，自动启动/重置 App、自动解锁、切换 IME、全局 logcat 采集及无障碍服务抑制均需按[运行时契约](2026-09-21-agent-runtime-contracts.md#5-phonesessionobservation-与动作工具)约束。普通 `hideKeyboard=false` 也会触发 IME reset，应省略该 capability。全局 Toast 监听默认在 NewSession 启动，仅事后关闭设置还可能残留缓存；首版小补丁从启动时禁用其文本采集/日志/拼树。连接或 display 失效时关停工具，重绑并校验后才恢复，不能回落 display 0。
+
+一个 Appium 会话操作副屏，用户正常操作主屏；不为两个 display 分别建立 UiAutomation 会话。设置 `waitForIdleTimeout=0`，避免把主屏持续输入当成副屏必须等待的全局忙碌状态；用副屏状态检查和文本读回来确认动作。设备端显示校验须读取刷新后节点的窗口，不能只依赖元素创建时缓存的 display ID。
 
 这些是围绕成熟驱动的有限适配，不复制整个自动化框架。若底座探针发现无法以小范围修改满足隔离，先报告具体缺口再调整选型，不同时维护第二套自研驱动。
 
