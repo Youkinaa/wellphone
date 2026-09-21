@@ -244,3 +244,5 @@ Appium 的动作信息并非默认全部包含：[IncludeA11yActionsInPageSource
 持续会话状态沿用 LangGraph persistence 与既定存储分工，新增明确的[状态字段和权威归属](../superpowers/specs/2026-09-21-agent-runtime-contracts.md#21-持续维护的运行状态)。查询改写读取原话、历史与结构化任务状态；修改先进入持久控制事件再 replan，interrupt 恢复保留任务身份。Redis 聊天记录不代替 DAG、约束、授权和操作账本。
 
 按用户选择，行程图片先交 VLM 直接识别，复用 LangChain 图像消息与结构化输出，不增加独立 OCR 服务。**这是 MVP 设计决定，不是当前配置模型已通过识别测试的结论。** 来源图片、原文/规范化字段、歧义随候选保存；确定性校验与真实日历核验分别检查“字段是否合理”和“是否真的写入”。具体流程见[主设计 11.1](../superpowers/specs/2026-09-21-wellphone-design.md#111-行程图片mvp-直接使用-vlm)，识别困难样本列入[验证计划](../validation/2026-09-21-feasibility-and-demo.md#a-行程截图--日历)。
+
+新增交互需求后，建议默认入口改为 Web 上传原图供 VLM 读取，业务仍在副屏日历 GUI 完成；这项资料入口调整尚待审阅，不是用户此前已选 VLM 就意味着已批准全部前端设计。手机图库读图保留独立可选场景。理由和输入图/设备观察的类型边界见[交互应用设计](../superpowers/specs/2026-09-21-interaction-app-design.md)。

@@ -7,7 +7,7 @@
 ```mermaid
 flowchart LR
     U[用户] --> MAIN[AVD 主屏]
-    C[电脑对话 / 计划审阅] --> G[LangGraph + 任务 DAG]
+    C[Web 上传 / 对话 / 计划审阅] --> G[LangGraph + 任务 DAG]
     S[外置 skills] --> G
     G <--> L[LangChain / 模型 API]
     G <--> R[Redis 历史 / SQLite 执行状态]
@@ -17,7 +17,7 @@ flowchart LR
 
 **计划部署步骤**（实现后补充可执行命令）：
 
-1. 安装 Android Studio / SDK / Platform Tools，首轮固定一个 API 34 AVD；准备主屏使用 App、图库/日历、一个外卖 App 和腾讯会议，预先登录。
+1. 安装 Android Studio / SDK / Platform Tools，首轮固定一个 API 34 AVD；准备主屏使用 App、日历、一个外卖 App 和腾讯会议，预先登录。截图拟通过 Web 上传，VLM 读原图，业务写入仍走手机 GUI。
 2. 准备固定版本 Appium UiAutomator2 与 scrcpy，应用必要的显示隔离补丁；验证副屏观察/中文填写及主屏持续输入，配置见主设计。
 3. 启动带持久化的本地 Redis；配置模型与设备参数，启动电脑 Agent 和控制台。SQLite 状态与截图保存在本地。
 4. 运行通用 Agent，查看 DAG、动作和证据；从真实 App 列表重新打开结果核验。下单与支付按具体授权执行并分别报告状态。
@@ -32,10 +32,11 @@ flowchart LR
 上述新增配置名尚未接入代码。`.env`、截图、账号数据和原始轨迹不入库；产品 `skills/` 与开发助手的 `.agents/skills/` 分开。
 
 - [主设计](docs/superpowers/specs/2026-09-21-wellphone-design.md) · [运行时契约](docs/superpowers/specs/2026-09-21-agent-runtime-contracts.md)：工具、skills、DAG/replan、消息和恢复。
+- [交互应用建议](docs/superpowers/specs/2026-09-21-interaction-app-design.md)：Web 上传、对话、任务控制、SSE 恢复；新增入口待审阅，尚未实现。
 - [本轮资料核验](docs/research/2026-09-21-agent-runtime-and-gui-research.md) · [平台研究与历史路线](docs/research/2026-09-21-platform-research.md)：三份用户参考及官方源码依据。
 - [验证与演示计划](docs/validation/2026-09-21-feasibility-and-demo.md)：实验门槛、三个演示、7 天安排和未通过时的处理。
 - [原 AOSP 实测报告](docs/validation/2026-09-21-appium-concurrency-probe.md) · [探针部署步骤](experiments/display_concurrency/README.md)：60 秒主屏合成输入期间，副屏完成 141 轮操作；保留限制与失败记录。
-- [App 安装与登录准备](docs/validation/2026-09-21-real-app-preparation.md)：美团与腾讯会议已装入支持 ARM64 的 API 34 AVD，新镜像机制复验完成 87 轮；待登录和真实页面验收。
+- [App 准备与性能排查](docs/validation/2026-09-21-real-app-preparation.md)：用户已确认美团、腾讯会议登录；机制复验完成 87 轮，真实页面待验收。
 - [开发问题与决策日志](docs/development-journal.md)：持续记录问题、证据、取舍、修复结果和面试复盘。
 
 范围：单用户、单进程、单 AVD、单副屏、单活动任务；只承诺通过实测的 App/页面。模拟器验证不等于原题的物理手机部署，该项有设备后补验。

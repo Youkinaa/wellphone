@@ -1,6 +1,6 @@
 # 真实 App 安装与登录准备
 
-日期：2026-09-21。美团和腾讯会议已安装，并分别打开首次隐私/服务协议页面；本轮自动化准备未代用户接受协议、登录或创建会议/订单。**安装/首次启动通过，不等于登录、业务页面或副屏并发兼容通过。** 用户在准备期自行登录，随后再做真实页面预检。
+日期：2026-09-21。**用户已明确反馈美团和腾讯会议登录成功。** 首次安装时自动化只打开隐私/服务协议页，之后由用户完成登录，未代用户创建会议或订单。安装、用户确认登录与真实业务/副屏并发验收分别记录，后两项页面验收仍未完成。
 
 ## 1. AVD 与本次镜像调整
 
@@ -107,6 +107,35 @@ env ANDROID_AVD_HOME="$HOME/.cache/wellphone/avd" \
 
 本报告第 4 节的 87 轮机制实验发生在切换导航之前；之后若复跑固定坐标探针，必须重新核对导航/键盘布局和坐标。此次准备期导航调整不作为 Agent 执行期间修改主屏设置的许可。
 
+### 3.2 登录后美团卡顿：配置取证与 GPU 对照
+
+用户反馈登录成功但美团很卡。先只读采样，随后在用户明确“暂时不用，可以留给调试”的窗口尝试一次图形配置对照；不清除 userdata、不卸载或重新登录、不创建订单。下列是准备期主屏检查，**不是主副屏并发性能验收**。
+
+| 检查 | 2026-09-21 实际证据 | 可得结论 |
+| --- | --- | --- |
+| 宿主加速能力 | i7-11700K、16 线程、约 31 GiB RAM；RTX 3070 Ti 8 GiB / 驱动 565.57.01；DISPLAY=:1 的 GLX direct rendering=Yes | 有可用硬件图形加速，不是宿主没有独显 |
+| CPU 虚拟化 | `emulator -accel-check` 返回 KVM usable；运行进程持有 KVM VM/vCPU fd | 没有把整个 x86 Android 放在纯软件 CPU 模拟里 |
+| 原配置 | 2 vCPU / 3072 MiB / `-gpu swiftshader`；启动日志实际为 Google SwiftShader | 图形仍由 CPU 软件渲染，ARM64 App 原生代码另有翻译成本 |
+| 宿主内存短采样 | `vmstat 1 6` 的 5 个区间 `si=so=0`，memory pressure avg10=0 | 这几秒未见宿主正在交换；已用 swap 不等于当前换页瓶颈 |
+| 模拟器内存 | 一次可用约 434 MiB；后续 8.03 秒为约 520→517 MiB，swap 已用约 1.87 GiB；增量换入 10 页、换出 0 页 | 余量偏小，但这段样本没有持续换页证据；不能只凭剩余内存定根因 |
+| 累计美团帧统计 | 初次 1961 帧 / 24.17% jank；后续 2246 帧 / 21.99%，p95=97 ms | App 确有卡顿记录；是进程累计动态统计，不能当成固定时长基线或 Agent 干扰率 |
+
+受控动作是在美团首页预热 4 次滚动、重置该 App 的 `gfxinfo`，再执行相同的 24 次上下滚动。每次动作前检查前台仍为美团首页；未做点击购买或更改账号。
+
+| 阶段 | 结果 |
+| --- | --- |
+| 原 SwiftShader 的当前已运行环境 | 24 次完成，15.52 秒；486 帧、34 卡顿帧（7.00%），p95=24 ms、p99=30 ms |
+| 同 AVD 改为 `-gpu host`，核数/内存/尺寸不变 | 重启完成，日志和 SurfaceFlinger 确认 NVIDIA GLES 生效；美团首次启动 `Status: ok` |
+| host 下相同滚动 | 一次 ADB swipe 等待超过 25 秒；系统 13:31:27 记录首页 `MainActivity` 输入等待 5003 ms 的 ANR，画面出现 “Meituan isn't responding”；未取得完整的对照帧样本，判该轮失败 |
+
+host 启动还记录 `Vulkan driver doesn't support any external memory modes`，但 GLES 和界面均能初始化；它与此次美团 ANR 的因果关系未定。匹配的 App ANR trace 未提供可用 main 线程栈，不能把同份 DropBox 中的 system_server 栈当作美团栈。旧软件渲染环境已有登录页 ANR，故既不能宣称换 GPU 修好了，也不能单凭这一次断言所有卡顿由 host 模式引起。
+
+这不是严格控制所有变量的 GPU 基准：重启改变进程/缓存/后台服务，首页内容依赖网络。当前结论仅是“软件渲染配置存在可优化空间；直接切 host 的本轮运行未通过”。已回退原 SwiftShader 配置，未同时加内存/核数来掩盖失败。
+
+**回退与恢复记录：**第一次回退启动成功，随后模拟器进程退出 139，回退滚动探针在第一条状态查询即因 ADB 离线终止，未获得帧样本。宿主 Apport 在 13:37:44 确认 qemu PID 3892909 的 signal 11，内核前一秒记录 RenderThread segfault；因程序不属于系统软件包，Apport 未保存可解析 core。再次按原参数启动后，`sys.boot_completed=1`，ADB 在线，SurfaceFlinger 回读 Google SwiftShader，前台为 NexusLauncher，三键模式 0、原 Google IME 均保留。未清除 userdata；短时恢复不等于模拟器崩溃或美团 ANR 已修复，未完成回退滚动复验，也未继续真实 App 副屏检查。宿主崩溃与 App ANR 分开追踪，见[开发日志 J10](../development-journal.md#2026-09-21--j10回退时发生宿主模拟器崩溃)。
+
+本地证据：`artifacts/diagnostics/2026-09-21-meituan-readonly.json`、`meituan-swiftshader-scroll.json`、`meituan-host-scroll-failed.json`、两份启动日志及脱敏 ANR 摘要，均默认不入库。后续针对 ANR 做线程/原生桥与负载分析，CPU、RAM、GPU 各自单变量验证；没有实测就不承诺参数加大后一定流畅。官方说明：[图形与 VM 加速](https://developer.android.com/studio/run/emulator-acceleration)、[ARM 应用翻译](https://android-developers.googleblog.com/2020/03/run-arm-apps-on-android-emulator.html)。
+
 ## 4. 验证边界与后续工作
 
 换镜像后已用同一探针源码重新运行，结果见[本镜像机器记录](../../experiments/display_concurrency/results/2026-09-21-google-api34.json)，不直接沿用原 AOSP 的 141 轮结论：
@@ -127,4 +156,4 @@ env ANDROID_AVD_HOME="$HOME/.cache/wellphone/avd" \
 
 本轮尚未验证美团搜索/结算、腾讯会议查询/预约、后台旧 task、支付/外链或通知干扰。语义快照与模型编排仍为设计阶段。
 
-后续依照[验证计划](2026-09-21-feasibility-and-demo.md)推进：用户登录 → 真实 App 必要页面预检 → 副屏填写/转移与主屏真人输入并发 → 通用 Agent。问题与最终解决过程持续更新[开发日志 J07](../development-journal.md)。
+后续依照[验证计划](2026-09-21-feasibility-and-demo.md)推进：登录已由用户确认 → 性能诊断及真实 App 必要页面预检 → 副屏填写/转移与主屏真人输入并发 → 通用 Agent。交互层建议可在设计审阅后并行开发，不依赖所有业务页面均通过；真实任务执行入口仍受设备门槛控制。问题与最终解决过程持续更新[开发日志](../development-journal.md)。
