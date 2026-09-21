@@ -57,6 +57,19 @@ d5dd4c1f5e50a2f72faf2245da393666
 
 签名验证证明下载的 APK 签名完整性；来源由官网链路确认，没有把新记录的证书指纹称为已与独立历史信任库比对。原文件与核验元数据保存在本机 `~/.cache/wellphone/app-downloads/`，不提交 APK。
 
+### 2.1 用户追加安装 QQ
+
+同日按用户要求，在同一 `wellphone_api34_apps` 安装普通 Android QQ：包名 `com.tencent.mobileqq`，版本 **9.3.65 / 16240**，minSDK 23、targetSDK 34，原生 ABI 为 `arm64-v8a`。设备安装返回 `Success`，回读包版本与 ABI 一致；启动 `com.tencent.mobileqq.activity.SplashActivity` 返回 `Status: ok`，随后观察到 QQ 登录 Activity。未代用户填写账号或发送消息，未将 QQ 新增为 Agent 已验收业务。
+
+来源：[QQ 官网](https://im.qq.com/index/) → 官网下载脚本/移动端配置 → [官方下载包](https://downv6.qq.com/qqweb/QQ_1/android_apk/9.3.65_2a98ecf55b5ee03a.apk)。APK 为 `392021727` 字节，ZIP CRC 与 v1/v2/v3 签名验证通过，无签名警告。本地文件为 `~/.cache/wellphone/app-downloads/qq-official.apk`，来源与核验元数据为同目录 `qq-official-evidence.json`。
+
+```text
+QQ APK SHA256:
+f63ecbac6980d2109a7ceb854db0324668b1318cf50c884c0e7c35752cffef84
+QQ 签名证书 SHA256:
+ea6e97ad6c34f7039a9c6daba732c97d0e098e83ede2b4d52c76eb0184ac7a38
+```
+
 ## 3. 在当前电脑打开并登录
 
 模拟器窗口运行于工作区所在 Linux 桌面 `DISPLAY=:1`。它不在用户自己的 iPhone 上，也不会自动出现在 SSH/VS Code 的本地桌面。能访问此 Linux 图形桌面时，使用模拟器窗口即可；仅 SSH 访问时仍需配置可用的远程桌面入口，当前未部署远程访问服务。
@@ -83,6 +96,16 @@ env ANDROID_AVD_HOME="$HOME/.cache/wellphone/avd" \
 ```
 
 登录数据留在 AVD 本地 userdata；`-no-snapshot` 不清除 userdata。不要 `-wipe-data`、卸载 App 或把 AVD 数据加入 Git。用户无需把密码/验证码写入聊天或仓库。后续调试先记录包名、必要页面和脱敏结果，再检查副屏启动、控件树、中文填写与页面跳转。
+
+### 3.1 回桌面与导航排查
+
+用户反馈按返回/主页后 App 仍在前台。本次检查时系统初始化已完成，未启用锁定任务，默认桌面和系统 Home 路径可用；美团登录 Activity 则有一次明确的 `am_anr` 事件，原因是触摸派发等待超过 5001 ms。不能由此认定所有按键失败均由同一个问题导致，也不能把安装成功写成页面运行稳定。
+
+在用户请求排查的准备期，将导航从手势模式改为三键模式（`navigation_mode: 2 → 0`），已确认底部显示 **◀ 返回、● 主页、■ 最近任务**。返回用于退一层页面；主页用于回桌面且保留 App 后台状态；最近任务用于查看/切换任务，划走卡片不等于强制停止所有后台服务。
+
+从美团发送一次系统 Home 后，5 次前台采样均为桌面。切换三键后，从 QQ 点击底部主页，前 3 次采样为桌面，第 4 次采样暂未返回 top-resumed Activity，随后页面继续变化；连续 4 次均为桌面的断言未通过，未将这次检查记为稳定性测试通过。已停止自动点击，用户侧按键体验待确认；美团 ANR 根因和稳定性仍未解决，见[开发日志 J08](../development-journal.md)。
+
+本报告第 4 节的 87 轮机制实验发生在切换导航之前；之后若复跑固定坐标探针，必须重新核对导航/键盘布局和坐标。此次准备期导航调整不作为 Agent 执行期间修改主屏设置的许可。
 
 ## 4. 验证边界与后续工作
 
