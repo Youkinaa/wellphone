@@ -8,11 +8,13 @@
 
 构建一个通用运行时：**LangGraph 编排 + LangChain 消息和模型适配 + 动态任务 DAG + 外置 skills + 受控副屏工具**。日历、外卖、腾讯会议共享同一规划器、执行器、观察器和验证机制；领域知识放在外部 skill 文件中，不为每个业务写一张 LangGraph workflow。
 
+这是有官方机制依据的候选主线，尚未通过具体 App 可行性门槛。实现顺序先做无需 LLM 的页面兼容预检与最小中文/焦点探针；通过后才投入 LangGraph、Redis、DAG 和业务 skills。前置实验的范围与停止条件见[验证计划](../../validation/2026-09-21-feasibility-and-demo.md)，不能等完整业务实现后才验证底座。
+
 同一个 Android 实例提供两块显示区域：主屏由用户操作；Agent 的目标 App 在虚拟副屏运行。所有截图、窗口树、触摸、滑动、填写和返回操作绑定副屏，模型没有主屏操作工具。
 
 “不用 API”的范围是：不调用外卖、腾讯会议或系统日历的数据接口代办业务。仍使用已配置的模型 API；ADB、scrcpy、Android 无障碍是手机控制实现所需的系统接口。日历新增也通过真实 App 界面完成，旧版 ContentProvider 业务桥退出首版。
 
-开发和演示以一个官方 API 34/35 AVD 为目标。两个独立模拟器不能证明同机并发。没有真机也推进模拟器验证版，提交时说明原题的物理手机部署项尚未覆盖。
+开发和演示以一个官方 AVD 为目标，首轮预检固定 API 34，以对应已追踪的 Android 14 源码；API 35 属后续单独验证版本。两个独立模拟器不能证明同机并发。没有真机也推进模拟器验证版，提交时说明原题的物理手机部署项尚未覆盖。
 
 | 路线 | 优势 | 代价 | 决定 |
 | --- | --- | --- | --- |
@@ -141,13 +143,15 @@ coordinator 唯一修改计划；旧 revision 的模型结果和 worker 回报�
 
 ## 8. 副屏实现及硬性边界
 
-候选底座为 scrcpy v4.1 + Android 14/15 AVD，shell 身份运行 server，副屏使用 `PUBLIC + TRUSTED + OWN_FOCUS + STEAL_TOP_FOCUS_DISABLED`。禁抢 top focus 的 VirtualDisplay flag 为 `1 << 16`；当前 scrcpy 需要修改并检查实际生效。
+候选底座为 scrcpy v4.1 + Android 14 AVD，shell 身份运行 server，副屏使用 `PUBLIC + TRUSTED + OWN_FOCUS + STEAL_TOP_FOCUS_DISABLED`。禁抢 top focus 的 VirtualDisplay flag 为 `1 << 16`；当前 scrcpy 需要修改并检查实际生效。先固定一个版本验证，避免同时扩展镜像兼容矩阵。
 
 “隐藏”指不占 Android 主屏，并非使用 `PRIVATE` display flag；AOSP 无障碍可能排除非系统持有的 PRIVATE 虚拟屏。电脑可以保留副屏预览。
 
 观察取自副屏帧，辅以小型 Android Accessibility 桥：声明 `canRetrieveWindowContent` 并启用 `FLAG_RETRIEVE_INTERACTIVE_WINDOWS`，通过 `getWindowsOnAllDisplays()` 按 display 筛选窗口和节点。`getRootInActiveWindow()` 可能来自任意显示区域，不作为副屏入口。无障碍权限在准备阶段启用，桥在本地过滤主屏数据后再返回。
 
-**中文输入是首要风险。** Android 单 IME 不会随副屏自然变成两套；禁抢 top focus 的副屏无法显示 IME。ASCII 先试定向 KeyEvents；中文候选为节点 `ACTION_SET_TEXT`。TextView 虽直接设文本，但无障碍服务路径仍可能请求窗口焦点，必须验证其与 display flags 的组合，不从方法名推导隔离保证。
+**中文填写的系统路径已明确，目标控件兼容须前置验证。** 本次核验的 Android 14 单 IME 不会随副屏变成两套；禁抢 top focus 的副屏无法显示 IME。标准可编辑 TextView 的 `ACTION_SET_TEXT` 可直接写中文。源码已追到显示上移、task 父容器排序和 IME 请求拒绝：正确 flags 下，副屏的普通焦点/输入请求不会因此切走主屏 IME。前提是主屏保持 top、不同 App/任务、支持该动作的控件且无额外跨屏行为，详见[研究 2.3](../../research/2026-09-21-agent-runtime-and-gui-research.md)。
+
+预检重点是实际 AVD 与上述机制对应、真实 App 的原生/WebView/自绘控件是否支持填写、页面回调有无额外行为，以及持续中文组合输入时的实际结果。用最小固定动作探针完成，不等待 LLM/skills 实现。ASCII 可试定向 KeyEvents；不能把有明确限制的全局 IME/剪贴板方案作为失败时的透明替代。
 
 | 风险 | 处理 |
 | --- | --- |

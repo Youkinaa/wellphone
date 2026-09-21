@@ -2,6 +2,20 @@
 
 核验日期：2026-09-21。方法：实际获取官方网页、官方 Doc/源码和项目实现；不是只阅读项目简介。**没有启动模拟器、登录 App、调用模型/业务 API 或执行真实任务。** 下文“事实”来自资料，“决定”是本项目设计，“待测”不能写成已实现能力。
 
+## 结论与证据边界
+
+这三份参考分别提供设备控制底座、视觉操作决策和 Agent 方法索引，没有一份已核验材料直接给出本项目完整的“用户主屏持续中文输入、Agent 同机副屏完成真实业务”验收结果。不能直接拼接原执行器；也不能据此断言世界上不存在其他实现。
+
+| 问题 | 本轮可以明确作出的判断 | 还需要什么证据 |
+| --- | --- | --- |
+| 同一 Android 能否建立独立交互副屏 | 可以，scrcpy 与 AOSP 已有创建、取帧及定向输入机制 | 目标 AVD 的配置和运行记录 |
+| 主副屏能否各使用一套普通软键盘 | 本方案核验的普通同用户 Android 14 路径不支持；单 IME 随最高焦点切换 | 不继续把“双 IME”当候选方案 |
+| 副屏无 IME 时能否写中文 | 标准可编辑 TextView 的 SET_TEXT 接收 CharSequence，直接修改内容；无需用拼音键盘模拟中文 | 真实控件暴露该动作且页面正确响应 |
+| SET_TEXT 的焦点请求是否必然抢主屏 | 不必然；已追完禁抢焦点、task 排序和 IME 拒绝路径，见 2.3 | 特定镜像和 App 无额外跨屏行为的集成实验 |
+| 目标 App 所有必要页面是否留副屏 | 有默认同屏启动规则，但已有 task、显式指定显示等可改变落点 | 无需 LLM 的真实页面预检，见 2.4 |
+
+选型结论：**“有明确系统实现依据的候选方案”，尚不是“目标 App 全部跑通的产品能力”。** 先完成[无 LLM 预检](../validation/2026-09-21-feasibility-and-demo.md)，再开发完整 Agent。
+
 ## 1. 用户给出的三份参考：读到了什么、用在哪里
 
 | 参考 | 本轮阅读范围 | 具体用于本项目的结论 |
@@ -23,6 +37,8 @@
 来源：[虚拟显示](https://github.com/Genymobile/scrcpy/blob/v4.1/doc/virtual-display.md)、[建屏源码](https://github.com/Genymobile/scrcpy/blob/v4.1/server/src/main/java/com/genymobile/scrcpy/video/NewDisplayCapture.java)、[Controller](https://github.com/Genymobile/scrcpy/blob/v4.1/server/src/main/java/com/genymobile/scrcpy/control/Controller.java)、[键盘说明](https://github.com/Genymobile/scrcpy/blob/v4.1/doc/keyboard.md)。
 
 决定：底座固定版本后做小范围 server 修改，不继承主屏控制通道。scrcpy 提供传输和输入基础，规划、权限、skills、业务核验由本项目补齐。
+
+补查相关社区讨论：[UHID 显示关联 PR #6009](https://github.com/Genymobile/scrcpy/pull/6009)明确区分独立鼠标指针与键盘限制，但原 PR 未合并，其表述也仅限该 UHID 方案；现行 v4.1 能力以 Controller 源码为准。[多用户启动 #6858](https://github.com/Genymobile/scrcpy/issues/6858)与[应用分身请求 #5848](https://github.com/Genymobile/scrcpy/issues/5848)是需求讨论，不能作为已支持同包隔离的证据。
 
 ### 1.2 AutoGLM 适合放在 GUI 执行决策层
 
@@ -59,13 +75,30 @@ Android API 30+ 有 `AccessibilityService.getWindowsOnAllDisplays()`；需要服
 
 [AccessibilityManagerService.isValidDisplay](https://github.com/aosp-mirror/platform_frameworks_base/blob/android14-release/services/accessibility/java/com/android/server/accessibility/AccessibilityManagerService.java#L4581) 排除非系统持有的 PRIVATE 虚拟屏。scrcpy 默认 PUBLIC 有观察基础；“隐藏”只表示不占用户主屏，不能为了隐藏把它改成 PRIVATE 后仍假设无障碍树可读。
 
-### 2.3 ACTION_SET_TEXT 也需要完整焦点实验
+### 2.3 焦点与中文已有明确系统契约，实测范围应收敛
 
-事实：[TextView](https://github.com/aosp-mirror/platform_frameworks_base/blob/android14-release/core/java/android/widget/TextView.java#L14315) 的 SET_TEXT 使用 `setText` 和 `setSelection`，可传中文；但[服务端动作路径](https://github.com/aosp-mirror/platform_frameworks_base/blob/android14-release/services/accessibility/java/com/android/server/accessibility/AbstractAccessibilityServiceConnection.java#L2077) 在转发多种 node action 前会调用 `requestWindowFocus`。
+官方 [IME 多显示文档](https://source.android.com/docs/core/display/multi_display/ime-support)明确写道：
 
-进一步追到 [WindowState](https://github.com/aosp-mirror/platform_frameworks_base/blob/android14-release/services/core/java/com/android/server/wm/WindowState.java#L5973)：先移动 display，再处理 task focus。第一条路径检查能否抢 top focus，并不足以证明后续 task focus 路径完全不影响主屏。
+> The system uses a single IME, but can shift between displays to follow user focus.
 
-决定：中文文本接口只能标为候选。必须在主屏连续拼音输入、选择候选词时，副屏反复执行 SET_TEXT、点击和返回，同时检查字符投递、IME target 和实际焦点。若失败，修底座或如实标受阻；不靠切输入法、全局剪贴板或业务 API 掩盖。
+本次把 Android 14 焦点链路固定到 AOSP commit `6e47c7075b91983ae501114425ea25e6df7690c8`。以下是源码支持的机制结论，不把 Android 14 分支自动等同任意 OEM、后续版本或尚未安装的 AVD 镜像。
+
+1. [Display.java](https://github.com/aosp-mirror/platform_frameworks_base/blob/6e47c7075b91983ae501114425ea25e6df7690c8/core/java/android/view/Display.java#L338)明确定义：`STEAL_TOP_FOCUS_DISABLED` 的 display 不抢其他屏的 top focus，只接收定向输入，并需配合 `OWN_FOCUS`；该组合隐式禁止副屏显示 IME。`local` 仅改变输入法位置，不产生第二套 IME。
+2. [TextView 的 SET_TEXT](https://github.com/aosp-mirror/platform_frameworks_base/blob/6e47c7075b91983ae501114425ea25e6df7690c8/core/java/android/widget/TextView.java#L14315)读取 CharSequence，调用 `setText`/`setSelection`。对支持动作的标准可编辑控件，可以直接写中文，不需全局键盘或剪贴板。
+3. 无障碍服务确实先请求窗口焦点，但该事实不等于必然抢主屏。显示上移路径检查 `canStealTopFocus()`；[DisplayWindowSettings](https://github.com/aosp-mirror/platform_frameworks_base/blob/6e47c7075b91983ae501114425ea25e6df7690c8/services/core/java/com/android/server/wm/DisplayWindowSettings.java#L292)又将禁抢标志映射为 `mDontMoveToTop`；[TaskDisplayArea](https://github.com/aosp-mirror/platform_frameworks_base/blob/6e47c7075b91983ae501114425ea25e6df7690c8/services/core/java/com/android/server/wm/TaskDisplayArea.java#L389)阻止 task 置顶把非 top 的副屏父容器一并抬到顶部。此前文档把后半条 task focus 路径列为未知，本次已补齐。
+4. [WindowManagerService.hasInputMethodClientFocus](https://github.com/aosp-mirror/platform_frameworks_base/blob/6e47c7075b91983ae501114425ea25e6df7690c8/services/core/java/com/android/server/wm/WindowManagerService.java#L8010)检查客户端是否属于 top focused display；副屏不符合时返回拒绝。[InputMethodManagerService](https://github.com/aosp-mirror/platform_frameworks_base/blob/6e47c7075b91983ae501114425ea25e6df7690c8/services/core/java/com/android/server/inputmethod/InputMethodManagerService.java#L3763)在修改当前焦点窗口和切换 IME 连接之前返回，因此该普通输入请求路径不会把主屏 IME 连接切给副屏。
+
+**机制判断：**主屏保持 top focus、副屏正确应用上述 flags、两边使用不同 App/任务、目标是支持 SET_TEXT 的标准控件且未发生额外跨屏行为时，“主屏保留 IME，副屏直接填写中文”有明确源码依据。不能继续把这一基础机制笼统标成完全未知。
+
+**集成实验的范围：**核对实际镜像/flags；真实 App 的原生/WebView/自绘控件是否暴露且正确处理 SET_TEXT；页面回调是否额外启动其他 Activity；主屏组合输入期间是否出现版本相关行为或资源干扰。先用固定动作探针测试，不需要完整 Agent。若控件不支持，不能借 ADB Keyboard、全局剪贴板或业务 API 掩盖。
+
+### 2.4 App 页面落点有规则，可以在写 Agent 前预检
+
+[AOSP Activity launch policy](https://source.android.com/docs/core/display/multi_display/activity-launch)描述：通常从 Activity 启动的新 Activity 与调用者同屏；无显示关联的 shell/Application context 可能按最近交互/启动的显示设备选择；解析到已有实例时会受原 task 所在屏影响，显式指定显示还可能搬动既有实例。指定第一次启动的 display，不能因此认为后续所有页面都被隔离。
+
+[`ActivityOptions.setLaunchDisplayId`](https://developer.android.com/reference/android/app/ActivityOptions#setLaunchDisplayId(int))提供启动目标，配合 [`isActivityStartAllowedOnDisplay`](https://developer.android.com/reference/android/app/ActivityManager#isActivityStartAllowedOnDisplay(android.content.Context,int,android.content.Intent))可做预检查，但不保证 App 自己后续产生的全部 Intent。`resizeableActivity` 是多窗口/尺寸适配信息，既不是“true 就全链留副屏”的充分条件，也不应把 false 直接当作“任何副屏全屏都不可运行”。
+
+决定：先固定一个镜像与 APK 版本，用原版 scrcpy 人工走 App 必要页面，记录 task/display；再用补丁底座和最小文本桥复验焦点/中文。首页、主流程、外部页面、已有 task、提交后页面分别记结果。未实际运行的支付链路不能被提交前检查替代。这样不必等 LangGraph、skills 或完整业务流程写完才发现 App 不兼容。
 
 ## 3. LangGraph：运行时循环与业务 DAG 分离
 
