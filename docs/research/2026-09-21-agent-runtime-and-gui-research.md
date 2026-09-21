@@ -36,7 +36,7 @@
 
 来源：[虚拟显示](https://github.com/Genymobile/scrcpy/blob/v4.1/doc/virtual-display.md)、[建屏源码](https://github.com/Genymobile/scrcpy/blob/v4.1/server/src/main/java/com/genymobile/scrcpy/video/NewDisplayCapture.java)、[Controller](https://github.com/Genymobile/scrcpy/blob/v4.1/server/src/main/java/com/genymobile/scrcpy/control/Controller.java)、[键盘说明](https://github.com/Genymobile/scrcpy/blob/v4.1/doc/keyboard.md)。
 
-决定：底座固定版本后做小范围 server 修改，不继承主屏控制通道。scrcpy 提供传输和输入基础，规划、权限、skills、业务核验由本项目补齐。
+决定：底座固定版本后做小范围 server 修改，不继承主屏控制通道。scrcpy 提供传输和输入基础，规划、权限、skills、业务核验由本项目补齐。正式会话也关闭[剪贴板自动同步](https://github.com/Genymobile/scrcpy/blob/v4.1/server/src/main/java/com/genymobile/scrcpy/control/Controller.java#L146)，禁止相关控制消息；[back-or-screen-on](https://github.com/Genymobile/scrcpy/blob/v4.1/server/src/main/java/com/genymobile/scrcpy/control/Controller.java#L658)在屏灭时会发 POWER，因此 Back 采用独立定向 KEYCODE_BACK，不能直接继承该复合动作。
 
 补查相关社区讨论：[UHID 显示关联 PR #6009](https://github.com/Genymobile/scrcpy/pull/6009)明确区分独立鼠标指针与键盘限制，但原 PR 未合并，其表述也仅限该 UHID 方案；现行 v4.1 能力以 Controller 源码为准。[多用户启动 #6858](https://github.com/Genymobile/scrcpy/issues/6858)与[应用分身请求 #5848](https://github.com/Genymobile/scrcpy/issues/5848)是需求讨论，不能作为已支持同包隔离的证据。
 
@@ -98,7 +98,7 @@ Android API 30+ 有 `AccessibilityService.getWindowsOnAllDisplays()`；需要服
 
 [`ActivityOptions.setLaunchDisplayId`](https://developer.android.com/reference/android/app/ActivityOptions#setLaunchDisplayId(int))提供启动目标，配合 [`isActivityStartAllowedOnDisplay`](https://developer.android.com/reference/android/app/ActivityManager#isActivityStartAllowedOnDisplay(android.content.Context,int,android.content.Intent))可做预检查，但不保证 App 自己后续产生的全部 Intent。`resizeableActivity` 是多窗口/尺寸适配信息，既不是“true 就全链留副屏”的充分条件，也不应把 false 直接当作“任何副屏全屏都不可运行”。
 
-决定：先固定一个镜像与 APK 版本，用原版 scrcpy 人工走 App 必要页面，记录 task/display；再用补丁底座和最小文本桥复验焦点/中文。首页、主流程、外部页面、已有 task、提交后页面分别记结果。未实际运行的支付链路不能被提交前检查替代。这样不必等 LangGraph、skills 或完整业务流程写完才发现 App 不兼容。
+决定：先固定一个镜像与 APK 版本，用原版 scrcpy 人工走 App 必要页面，记录 task/display；再用补丁底座和 Appium 最小探针复验焦点/中文。首页、主流程、外部页面、已有 task、提交后页面分别记结果。未实际运行的支付链路不能被提交前检查替代。这样不必等 LangGraph、skills 或完整业务流程写完才发现 App 不兼容。
 
 ## 3. LangGraph：运行时循环与业务 DAG 分离
 
@@ -166,3 +166,56 @@ API 对照研究：[REST 前提条件](https://cloud.tencent.com/document/produc
 已成功阅读三份用户参考和上述关键官方/开源内容。部分网页为 JS 页面，补读官网直接引用的公开资源；部分 raw 请求 TLS 失败后经重试或 GitHub API 获取。旧版/猜测路径的 404 与无关重定向未用于技术结论。
 
 本轮不公开原始账号数据，不读取 `.env` 的值，不进行真实业务动作。实现时固定 SDK、scrcpy、模型适配库及 App 版本，并保留可复现实验记录。下一步最关键的证据是：**同一个 AVD 中主屏持续中文输入，副屏能完成真实 App 的观察、中文填写和保存，且无首次跳屏。**
+
+## 7. 复用手机自动化框架与 MCP
+
+针对“是否有手机版 Playwright/MCP”补充核验：**有，可以复用。** 进一步核查当前实现后，改选 Appium UiAutomator2 + scrcpy + 薄适配层；先前默认自写整套 Accessibility 桥的投入没有必要。设备驱动负责控件和输入，MCP 负责工具暴露与调用，副屏隔离和业务授权仍需项目约束。
+
+### 7.1 可用框架与本项目取舍
+
+| 方案 | 已有能力 | 本题需要补齐的边界 | 取舍 |
+| --- | --- | --- | --- |
+| Appium UiAutomator2 | 原生 App 的树/定位/文本/手势；当前版本已有 `currentDisplayId`、设备端窗口筛选和定向启动 | 默认树、Toast、key/Back、会话启动与失败回退不能直接继承 | 主选；复用定位/文本/启动，与 scrcpy 分工 |
+| Python uiautomator2 | Python 调用树/控件/点击/文本；截图可传 `display_id`，当前底层 jar 也有多屏节点能力 | Python selector/click 未贯通可信 display 约束；dump 可含多屏，`send_keys` 有剪贴板/IME 路径 | 备用，不与 Appium 并行维护两套驱动 |
+| Playwright Android | 实验性 Android API；Chrome/WebView 外，也有原生 selector 的 fill/click/swipe/tree | 原生公开 selector/input 没有本项目需要的完整 display 绑定；不是普通浏览器 context 隔离 | 不作为首版手机后端；不能误称只支持网页 |
+| Playwright MCP | 浏览器导航、快照、点击等工具 | `--device/--mobile` 是浏览器移动设备模拟，不等于控制 AVD 原生 App | 不用于这三项原生 App 业务 |
+| Mobile Next Mobile MCP | 原子截图、树/ref、点击、输入、启动、按键等，也有 batch | 工具选 device，默认 mobilecli 通路未按副屏隔离；核对的中文路径使用全局剪贴板 | 可借鉴工具接口，不直接使用默认执行器 |
+| Maestro MCP | 官方 `maestro mcp`；inspect_screen、take_screenshot、run YAML | 工具选 device_id，Android RPC 未传 displayId；Unicode 临时切全局 IME | 适合常规测试流程；不直接用于主屏中文并发 |
+
+Playwright 来源：[官方 Android API](https://playwright.dev/docs/api/class-android)、[AndroidDevice](https://playwright.dev/docs/api/class-androiddevice)、[Playwright MCP](https://github.com/microsoft/playwright-mcp)。本次源码固定 Playwright `07f1a6154795f055f341b8972086533e8e48b36f`，[原生 fill](https://github.com/microsoft/playwright/blob/07f1a6154795f055f341b8972086533e8e48b36f/packages/playwright-core/src/server/android/driver/app/src/androidTest/java/com/microsoft/playwright/androiddriver/InstrumentedTest.java#L164)实际委托 UiObject2.setText；这证明可复用自动化存在，不证明它已实现同机输入隔离。MCP README 仅核验当日 main，未固定到不可变 commit。
+
+uiautomator2 来源：[Python core](https://github.com/openatx/uiautomator2/blob/657c5d791075945cc21e78e125b220461c8ae99c/uiautomator2/core.py#L76)、[Python click](https://github.com/openatx/uiautomator2/blob/657c5d791075945cc21e78e125b220461c8ae99c/uiautomator2/_selector.py#L138)、[当前 u2.jar dump](https://github.com/openatx/android-uiautomator-server-jar/blob/d0449b9da4b32ad28bee0d3c3f561c49010acf35/app/src/main/java/com/wetest/uia2/stub/AccessibilityNodeInfoDumper.java#L102)。当前 core 通过 app_process 启动 jar，不能用旧 atx-agent/APK 架构概括。底层 dump 通过跨屏窗口生成带 display-id 的树；Python UiObject.click 取坐标后交给全局 click，不能只给截图加 display_id 就称整条通路已隔离。未核对特定 wheel 所含 jar 与独立研究的 server commit 是否完全一致。
+
+Mobile MCP 来源：[默认执行器](https://github.com/mobile-next/mobile-mcp/blob/63a5974d9bfa5b66d1ee4d1b0945df3ebea18b11/src/server.ts#L213)默认是 MobileDevice/mobilecli，旧 AndroidRobot 仅兼容开关；[mobilecli 中文路径](https://github.com/mobile-next/mobilecli/blob/7ca95dcaf443fb6fb5112da55009f1adf5d28856/devices/android.go#L948)设置剪贴板、粘贴、清空，[UiAutomation 初始化](https://github.com/mobile-next/mobilecli/blob/7ca95dcaf443fb6fb5112da55009f1adf5d28856/agents/android/java/UiAutomationFactory.java#L82)含显示参数的构造使用 0。MCP 锁文件解析 mobilecli 1.0.9，本次核对的是所链当前源码，未验证发布二进制与该 commit 完全一致。Mobile MCP 外壳 Apache-2.0，但 mobilecli 当前[许可证](https://github.com/mobile-next/mobilecli/blob/7ca95dcaf443fb6fb5112da55009f1adf5d28856/LICENSE)为 FSL 1.1/两年后另授 Apache，不能仅看外壳就复制整条依赖链。
+
+Maestro 来源：[官方 MCP](https://github.com/mobile-dev-inc/maestro/blob/c436d39f2ba07c4241b7712f85aa5e889d90d62b/maestro-cli/src/main/java/maestro/cli/mcp/README.md)、[Android RPC](https://github.com/mobile-dev-inc/maestro/blob/c436d39f2ba07c4241b7712f85aa5e889d90d62b/maestro-proto/src/main/proto/maestro_android.proto#L35)、[Unicode 输入](https://github.com/mobile-dev-inc/maestro/blob/c436d39f2ba07c4241b7712f85aa5e889d90d62b/maestro-client/src/main/java/maestro/drivers/AndroidDriver.kt#L1365)。当前确实能填中文，但恢复旧输入法不能消除切换时已经发生的主屏干扰。
+
+### 7.2 Appium 当前版本实际接通了什么
+
+本次核验 UiAutomator2 driver **8.7.0**、server **10.6.6**、appium-android-driver **14.0.8** 的源码；[driver 依赖](https://github.com/appium/appium-uiautomator2-driver/blob/7a54db007aa8a44f5df21cd0b52afc13c0d277ae/package.json#L63)为 server `^10.6.0` 和 android-driver `^14.0.8`，这是兼容范围，不是已经安装验证的 lockfile。部署时还需锁定实际 Appium/Node/客户端/传递依赖。
+
+server 的 [AndroidX 依赖](https://github.com/appium/appium-uiautomator2-server/blob/4a8139161cbb3aad078e36539995eb734297d56e/gradle/libs.versions.toml#L28)固定 UI Automator **2.3.0**；虽官方目前另有 2.4.0，Appium 反射多个内部接口，不擅自升级替换。
+
+| 路径 | 源码证据 | 本项目使用方式 |
+| --- | --- | --- |
+| 副屏 XML | [AXWindowHelpers](https://github.com/appium/appium-uiautomator2-server/blob/4a8139161cbb3aad078e36539995eb734297d56e/app/src/main/java/io/appium/uiautomator2/utils/AXWindowHelpers.java#L106)：enableMultiWindows → getWindowsOnAllDisplays → get(currentDisplayId) → getRoot | 设备端先过滤后序列化；不把主屏树发送到电脑再删掉 |
+| 元素定位 | [CustomUiDevice](https://github.com/appium/appium-uiautomator2-server/blob/4a8139161cbb3aad078e36539995eb734297d56e/app/src/main/java/io/appium/uiautomator2/model/internal/CustomUiDevice.java#L134)使用上述 roots；[BySelectorHelper](https://github.com/appium/appium-uiautomator2-server/blob/4a8139161cbb3aad078e36539995eb734297d56e/app/src/main/java/io/appium/uiautomator2/model/BySelectorHelper.java#L75)补 display 条件 | 开放核验过的 id/accessibility-id/class/XPath；resource-id 使用完整包名，不开放旧 UiSelector 表达式 |
+| 中文直接填写 | [ElementHelpers](https://github.com/appium/appium-uiautomator2-server/blob/4a8139161cbb3aad078e36539995eb734297d56e/app/src/main/java/io/appium/uiautomator2/utils/ElementHelpers.java#L59)传 CharSequence 执行 ACTION_SET_TEXT；[replaceElementValue](https://github.com/appium/appium-uiautomator2-driver/blob/7a54db007aa8a44f5df21cd0b52afc13c0d277ae/lib/commands/element.ts#L169)传 replace:true | 不装 Unicode 键盘；校验节点归属与动作能力，重新读字段确认没有截断/误写 |
+| 启动 | [mobileStartActivity](https://github.com/appium/appium-android-driver/blob/23da04d4111261c00f10c21ba19175ef6d41de03/lib/commands/intent.ts#L109)把 display 拼入 am start-activity --display | 适配层构造已审核启动参数；仍检查旧 task，不能靠参数保证后续页面不跳屏 |
+| 触控/截图 | [元素手势](https://github.com/appium/appium-uiautomator2-server/blob/4a8139161cbb3aad078e36539995eb734297d56e/app/src/main/java/io/appium/uiautomator2/core/AxNodeInfoHelper.java#L173)取窗口 display；[截图](https://github.com/appium/appium-uiautomator2-server/blob/4a8139161cbb3aad078e36539995eb734297d56e/app/src/main/java/io/appium/uiautomator2/utils/ScreenshotHelper.java#L98)映射目标屏 | 现成能力存在；首版统一复用 scrcpy 帧与输入，避免再适配失败回退与截图 ID 映射 |
+
+### 7.3 不能沿用的默认行为与有限补丁
+
+1. **默认观察并不隔离。** 默认 enableMultiWindows=false 走 active root；[CurrentDisplayId](https://github.com/appium/appium-uiautomator2-server/blob/4a8139161cbb3aad078e36539995eb734297d56e/app/src/main/java/io/appium/uiautomator2/model/settings/CurrentDisplayId.java#L11)默认 0，-1 会 reset。可信适配器先绑定/回读，设备端 guard 检查非零目标显示及会话世代，成功前不开工具；失效不回落主屏。
+2. **全局 Toast 另有采集通路。** [NewSession](https://github.com/appium/appium-uiautomator2-server/blob/4a8139161cbb3aad078e36539995eb734297d56e/app/src/main/java/io/appium/uiautomator2/handler/NewSession.java#L53)无条件开启监听；[NotificationListener](https://github.com/appium/appium-uiautomator2-server/blob/4a8139161cbb3aad078e36539995eb734297d56e/app/src/main/java/io/appium/uiautomator2/model/NotificationListener.java#L98)记录事件文本/日志，[Dumper](https://github.com/appium/appium-uiautomator2-server/blob/4a8139161cbb3aad078e36539995eb734297d56e/app/src/main/java/io/appium/uiautomator2/core/AccessibilityNodeInfoDumper.java#L230)再拼进 XML。事后 enableNotificationListener=false 不清缓存；小补丁从启动禁文本采集、清缓存并取消拼树，保证主屏内容留在设备。
+3. **填写文本不能顺带发全局 Enter。** [SendKeysToElement](https://github.com/appium/appium-uiautomator2-server/blob/4a8139161cbb3aad078e36539995eb734297d56e/app/src/main/java/io/appium/uiautomator2/handler/SendKeysToElement.java#L63)检测字面反斜杠加 n 的尾缀后可能 pressEnter；这不是普通换行字符的等价描述。首版小补丁移除隐式 Enter，保留原文字串；需要 Enter 时另用 scrcpy 定向工具。
+4. **手势的失败路径不同于正常能力。** AndroidX 2.3.0 GestureController 的 MotionEvent.setDisplayId 反射失败后仍继续，Appium [W3C 动作](https://github.com/appium/appium-uiautomator2-server/blob/4a8139161cbb3aad078e36539995eb734297d56e/app/src/main/java/io/appium/uiautomator2/utils/w3c/ActionsExecutor.java#L250)也有相同行为；节点 window=null 可回落0。[Back](https://github.com/appium/appium-uiautomator2-server/blob/4a8139161cbb3aad078e36539995eb734297d56e/app/src/main/java/io/appium/uiautomator2/utils/Device.java#L64)与普通 key 未绑定屏。首版只用 scrcpy 定向输入，不为所有 Appium 动作补实现。
+5. **启动也会改全局状态。** [initDevice](https://github.com/appium/appium-android-driver/blob/23da04d4111261c00f10c21ba19175ef6d41de03/lib/commands/device/common.ts#L279)中 hideKeyboard=true 切 EmptyIME，false 也会 ime reset；应省略。设置 disableSuppressAccessibilityService=true 保留用户已启用的无障碍服务，skipLogcatCapture=true 避免默认全局日志；自动 App 启停、解锁/准备动作也需关闭或移到准备期，完整配置见[运行时契约](../superpowers/specs/2026-09-21-agent-runtime-contracts.md#5-phonesessionobservation-与动作工具)。
+
+这些源码支持“复用后端并做有限适配”的判断，尚未构建补丁或执行设备实验。主屏持续活动还可能触发 UiAutomator 的全局 idle 等待，探针应记录树刷新/填写延迟，避免把正常单屏测试性能外推到并发场景。
+
+## 8. 本轮状态与视觉提取决策
+
+持续会话状态沿用 LangGraph persistence 与既定存储分工，新增明确的[状态字段和权威归属](../superpowers/specs/2026-09-21-agent-runtime-contracts.md#21-持续维护的运行状态)。查询改写读取原话、历史与结构化任务状态；修改先进入持久控制事件再 replan，interrupt 恢复保留任务身份。Redis 聊天记录不代替 DAG、约束、授权和操作账本。
+
+按用户选择，行程图片先交 VLM 直接识别，复用 LangChain 图像消息与结构化输出，不增加独立 OCR 服务。**这是 MVP 设计决定，不是当前配置模型已通过识别测试的结论。** 来源图片、原文/规范化字段、歧义随候选保存；确定性校验与真实日历核验分别检查“字段是否合理”和“是否真的写入”。具体流程见[主设计 11.1](../superpowers/specs/2026-09-21-wellphone-design.md#111-行程图片mvp-直接使用-vlm)，识别困难样本列入[验证计划](../validation/2026-09-21-feasibility-and-demo.md#a-行程截图--日历)。

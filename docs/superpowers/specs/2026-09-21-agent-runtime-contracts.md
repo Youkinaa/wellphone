@@ -12,13 +12,13 @@
 | Coordinator | 接收控制事件、调度、合并结果、修改计划 | LangGraph 固定状态图，单个 run owner |
 | GuiExecutor | 节点目标 → 有界观察/行动循环 → 带证据结果 | LangChain 模型消息和结构化工具 |
 | ToolRegistry / Gateway | 注册工具、校验参数、权限、状态与预算 | 可信代码；技能无权修改 |
-| PhoneBackend | 副屏会话、观察、输入与目标 App 导航 | scrcpy + 小型 Accessibility 桥 |
+| PhoneBackend | 副屏会话、观察、输入与目标 App 导航 | Appium UiAutomator2 + scrcpy + 受控适配层 |
 | ConversationHistoryStore | `append_once/list_window/get_summary` | 普通 Redis，完整 LangChain message 编解码 |
 | RunStore / OperationLedger | 计划版本、控制事件、执行意图与真实结果 | SQLite，独立于 checkpoint |
 | CheckpointerFactory | 创建执行快照后端 | 文件型 AsyncSqliteSaver |
 | ArtifactStore | 观察截图、树、证据与摘要的引用 | 本地目录，默认不进 Git |
 
-建议代码目录为 `agent/{runtime,planning,messages,skills,tools,phone,storage}`、`android-bridge/`、`skills/`、`app_profiles/`、`tests/`。本轮不创建实现骨架。`android-bridge` 只处理观察与 GUI 操作，不提供日历或外卖数据代办接口。
+建议代码目录为 `agent/{runtime,planning,messages,skills,tools,phone,storage}`、`patches/`、`skills/`、`app_profiles/`、`tests/`。本轮不创建实现骨架。`phone` 复用现有驱动并提供薄适配；`patches` 仅保存固定上游版本所需的有限修改，不默认新建完整 `android-bridge` 工程。没有日历或外卖业务数据接口。
 
 ## 2. 请求和标识
 
@@ -35,6 +35,23 @@
 RequestInterpreter 输出包含 `original_text`、`normalized_goal`、`intent`、`constraints`、`resolved_references`、`missing_slots`、`target_task_id`、`source_message_ids`。意图取值为 `ASK / NEW_TASK / MODIFY / CANCEL / APPROVE / STATUS / SUPPLY_INFO`；领域标签用于选 skill，不是业务 workflow 路由器。
 
 MVP 一个 conversation 最多一个活动任务，一个设备最多一个执行会话。新的独立任务明确排队或替换，不隐式并行抢同一副屏。
+
+### 2.1 持续维护的运行状态
+
+Agent 是有状态运行时。下表描述逻辑字段及其权威归属，`RuntimeState` 是执行时组装的视图，不再独立维护一套事实副本。
+
+| 状态 | 最小内容 | 权威来源 / 恢复规则 |
+| --- | --- | --- |
+| 对话与任务关联 | `conversation_id`、活动 `task_id`、输入消息引用、待回答问题 | 关联/待处理请求在 RunStore；完整 LangChain 消息在 Redis，投递可补齐 |
+| 目标与约束 | 原话引用、规范化目标、实体/指代、预算/禁忌/时间、`request_revision` | RunStore；修改作为事件提交，历史摘要不得覆盖 |
+| 计划与执行位置 | `plan_revision`、DAG、节点结果、当前节点/步骤与重试预算 | RunStore 保存计划和已接纳结果；checkpoint 保存可对账游标 |
+| 中断与用户控制 | `accepted_control_seq`、`applied_control_seq`、暂停原因、待回复/授权关联 | RunStore 保存控制事实，checkpoint interrupt 与其对账 |
+| 手机连接与观察 | serial、display、`session_epoch`、App/窗口元数据、最新 observation 引用 | 保存绑定意图及证据引用；恢复时重新连接/校验/观察，不反序列化旧元素句柄 |
+| 现实操作与证据 | 授权引用、`operation_id`、提交/未知结果、artifact 引用 | OperationLedger 与 ArtifactStore；不知道结果时先核查，禁止盲重放 |
+
+例如“预算改成 20 元”：先持久接纳修改并阻断新业务动作，再更新结构化预算与 request revision，生成 PlanPatch，保留未受影响的已完成事实；状态和对话中都能追溯到这条用户消息。已有待确认项若受修改影响，重新生成当前提案；旧确认不能误用于新参数。
+
+进程恢复顺序固定为：加载任务关联和 RunStore → 对账 checkpoint/控制水位并盘点遗留操作，维持业务写入屏障 → 重连并校验副屏 → 获取新观察，开放必要的观察/核查导航以确认现实结果 → 未决副作用解除且当前控制事件/授权处理完毕后，由 coordinator 放行后续业务动作。连接前只能盘点账本，不能声称已核查 App；设备不可用或未知结果无法消除时保持可恢复暂停。
 
 ## 3. 业务 DAG schema
 
@@ -101,17 +118,31 @@ PlanPatch 包含基准版本、改动原因、增加/替换/取消节点、失�
 
 PhoneSession 由可信执行器创建并注入：`device_serial, android_user, display_id, session_epoch, approved_packages, owner_task_id`。模型只引用 session，不允许指定任意 display。display ID 不是 ADB device serial。
 
-桥接命令经本机 ADB 通路，以每会话凭证鉴别 SessionBroker 并绑定上述身份；具体传输在底座探针中确定。不得开放无鉴权广播/HTTP 控制入口；会话凭证不进入模型、公共日志或 skills。桥本地执行显示范围与工具白名单校验，不能只依赖电脑端检查。
+PhoneBackend 独占 Appium session 和 scrcpy 控制通道，经本机 ADB 连接固定 serial。Appium 只绑定宿主 loopback，手机端服务限本地 ADB 转发通路；不开放外部 HTTP/广播，不开启任意 shell 等宽松功能。现有驱动的 session ID 不能冒充认证；网关隔离原始驱动入口，所需会话凭证/设备端绑定校验由有限补丁补齐并在 G1 验收，尚非上游默认能力。凭证不进入模型、公共日志或 skills。
 
-Observation 包含：`observation_id, session_epoch, display_id, package, activity, windows, frame_id, captured_at, viewport, rotation, screenshot_ref, tree_ref`。桥在本地过滤所有非目标 display 的窗口、节点、事件和截图。节点 ID 只在对应观察世代有效，不缓存跨页面的 AccessibilityNodeInfo 对象。
+模型只调用 `phone.*`，不能任意执行 Appium 命令、修改 settings、使用旧 `-android uiautomator` 选择器、切换 WebView context 或读全局日志。设备端保持绑定 display/epoch，拒绝非目标窗口节点、失效显示与未绑定请求；电脑端 guard 不能代替这一检查。
+
+Observation 包含：`observation_id, session_epoch, display_id, package, activity, windows, frame_id, captured_at, viewport, rotation, screenshot_ref, tree_ref`。设备端在序列化前过滤非目标 display 的窗口、节点及事件内容；画面取自 scrcpy 绑定副屏。树与帧不是原子快照，窗口/旋转/画面不一致时重新观察。节点 ID 只在对应观察世代有效，不将 Appium 元素缓存当作跨页面或跨恢复的稳定句柄。
 
 动作请求至少包含 `session_ref, observation_id, target, args, expected_package, expected_precondition`。执行前检查 epoch、App、窗口、旋转和目标新鲜度；页面变化则重新观察并重新定位。坐标以对应截图的尺寸/旋转解释，不能把旧图坐标直接打到新页面。
 
-`phone.set_text` 只针对确认归属副屏、enabled/editable 且 action list 支持 SET_TEXT 的节点，执行后重新观察字段与焦点。若不支持安全中文填入，返回 `UNSUPPORTED_TEXT_INPUT`，不切换全局 IME、剪贴板或操作主屏键盘。Enter、Back 等也绑定显示设备并接受影响判定。
+`phone.set_text` 只针对确认归属副屏、enabled/editable 且 action list 支持 SET_TEXT 的节点，以替换语义写入，再观察字段与焦点。Appium 默认 SendKeys 的追加/clear 路径和特殊尾缀触发全局 Enter 不可直接继承；该版本检测的是字面反斜杠加 n，不能混称普通换行。采用 `mobile:replaceElementValue` 的 `replace=true` 路径，并用有限补丁移除隐式 Enter，按键另走定向通道。尚不支持的文本返回 `UNSUPPORTED_TEXT_INPUT`，不静默改写文本或切换全局 IME/剪贴板。Enter、Back、tap/swipe 首版统一经 scrcpy 绑定显示注入，不启用 Appium 的全局 key/Back 或未核验 W3C actions。
 
 `phone.launch_app` 只接 AppProfile ID，不接任意 Intent URI；执行器构造已测试的定向启动。启动前检查该包在主屏的全部现存 task/activity，包含后台旧任务；没有已验证的独立启动能力则拒绝，不自动迁移或 force-stop。用户在任务期间开始用同包时暂停，副屏销毁不搬回主屏或销毁用户原有 task。
 
+scrcpy 整个运行会话固定 `clipboard_autosync=false`，控制消息白名单拒绝 GET/SET_CLIPBOARD；没有显式剪贴板工具也不意味着后台同步已关闭。`phone.back` 使用定向 `KEYCODE_BACK`，不使用可能在屏灭时触发 POWER 的 `TYPE_BACK_OR_SCREEN_ON`；模型无电源/系统设置操作入口。副屏显示失效或设备锁屏时暂停，不自动唤醒/解锁主屏。
+
 这些 guard 降低错误概率，但不能为未经测试的 App 页面转移提供数学保证。任何主屏跳转都使该测试失败，不能用“立即停机”替代隔离验收。
+
+Appium 启动配置属于可信部署配置，模型不可改写：
+
+- 准备期安装/初始化 instrumentation；任务期固定 `autoLaunch=false`、`noReset=true`、`forceAppLaunch=false`、`shouldTerminateApp=false`、`skipUnlock=true`、`skipLogcatCapture=true`、`disableSuppressAccessibilityService=true`，不在用户使用时执行自动安装、清数据或改系统动画等准备动作。
+- 省略 `hideKeyboard`，禁用 `unicodeKeyboard` 与全局剪贴板工具；`hideKeyboard=false` 仍会重置全局 IME。准备完成后才考虑 `skipDeviceInitialization` 等跳过选项，不能用它们掩盖未完成初始化。
+- Gate 关闭时绑定非零 `currentDisplayId`，固定 `enableMultiWindows=true` 并回读核验；全局 Toast 文本采集从 server 启动即禁用，不依赖事后关监听的缓存过期。
+- Appium 默认 display 为 0，`-1` 可重置设置；server 新会话/重连必须先重新绑定，设备端绑定校验未通过就拒绝观察和动作。旧元素引用随会话世代失效。
+- 默认 Appium gesture 注入存在定向设置失败后继续执行的路径；首版复用 scrcpy 的失败即拒绝通道。以后启用 Appium gesture 必须先修该路径和节点窗口为空回落 display 0 的行为，再单独验收。
+
+上述约束与上游固定版本关系见[研究第 7 节](../../research/2026-09-21-agent-runtime-and-gui-research.md#7-复用手机自动化框架与-mcp)，不能用安装最新版代替依赖锁定和运行验收。
 
 ## 6. skills 与 AppProfile 的数据边界
 
@@ -156,7 +187,7 @@ interrupt 在独立审阅节点，节点前只做可重放的准备工作。恢�
 
 ## 8. 消息、Redis 与 checkpoint
 
-LangChain 消息保留类型、ID、内容块、`AIMessage.tool_calls` 和 `ToolMessage.tool_call_id`。工具调用组完整进入或离开上下文；大截图和树放 artifact，不把它们反复塞进 Redis 和 prompt。`add_messages` 按 ID 合并，不是内容去重器。
+LangChain 消息保留类型、ID、内容块、`AIMessage.tool_calls` 和 `ToolMessage.tool_call_id`。工具调用组完整进入或离开上下文；大截图和树放 artifact，Redis 存引用；本次视觉调用由适配器加载必要截图为实际图像内容块，不重复附带全部历史图像。`add_messages` 按 ID 合并，不是内容去重器。
 
 上下文由系统约束、选中 skills、规范化请求、结构化任务状态、必要摘要、最近完整消息组和当前观察构成。先预算 token，再压缩历史；不能压缩掉仍有效的预算、禁忌、授权和未完成 tool call。
 

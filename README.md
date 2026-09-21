@@ -2,7 +2,7 @@
 
 用户在 Android 主屏刷屏、打字，Agent 在**同一个 Android 实例的虚拟副屏**操作真实 App。**当前仅完成调研与设计，尚无可运行程序或设备实验结果。** 开发与演示以单个官方 Android 模拟器为主，真机可选。
 
-候选方案：LangGraph 通用编排 + LangChain 消息/模型适配 + 可修改的任务 DAG + 外置 skills + 受控 GUI 工具。计划演示行程截图转日历、查询/创建腾讯会议、按需求点外卖；三者共用执行器，通过真实 App 界面完成，不接业务 API。**先做无需 LLM 的副屏与真实 App 预检，通过后再实现 Agent 内核。**
+候选方案：LangGraph 通用编排 + LangChain 消息/模型适配 + 可修改的任务 DAG + 外置 skills + Appium/scrcpy 受控 GUI 工具。计划演示行程截图转日历（VLM 直接识别）、查询/创建腾讯会议、按需求点外卖；三者共用执行器，通过真实 App 界面完成，不接业务 API。**先做无需 LLM 的副屏与真实 App 预检，通过后再实现 Agent 内核。**
 
 ```mermaid
 flowchart LR
@@ -11,14 +11,14 @@ flowchart LR
     S[外置 skills] --> G
     G <--> L[LangChain / 模型 API]
     G <--> R[Redis 历史 / SQLite 执行状态]
-    G --> T[受控工具 / scrcpy / 无障碍桥]
+    G --> T[受控适配层 / Appium / scrcpy]
     T <--> SUB[同一 AVD 副屏的真实 App]
 ```
 
 **计划部署步骤**（实现后补充可执行命令）：
 
 1. 安装 Android Studio / SDK / Platform Tools，首轮固定一个 API 34 AVD；准备主屏使用 App、图库/日历、一个外卖 App 和腾讯会议，预先登录。
-2. 编译固定版本的 scrcpy 副屏补丁及 Android 无障碍桥，完成授权；验证主屏持续中文输入时副屏不抢焦点或键盘。
+2. 准备固定版本 Appium UiAutomator2 与 scrcpy，应用必要的显示隔离补丁；验证副屏观察/中文填写及主屏持续输入，配置见主设计。
 3. 启动带持久化的本地 Redis；配置模型与设备参数，启动电脑 Agent 和控制台。SQLite 状态与截图保存在本地。
 4. 运行通用 Agent，查看 DAG、动作和证据；从真实 App 列表重新打开结果核验。下单与支付按具体授权执行并分别报告状态。
 

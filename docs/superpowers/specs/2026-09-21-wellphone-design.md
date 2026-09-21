@@ -36,12 +36,15 @@ flowchart TB
     LG <--> HISTORY[Redis 会话历史]
     LG <--> STATE[SQLite checkpoint / 操作账本]
     LG --> GW[工具注册表与策略网关]
-    GW --> BR[副屏桥接器]
+    GW --> BR[PhoneBackend 受控适配层]
+    BR --> AP[Appium UiAutomator2：控件树 / 文本]
+    BR --> SC[scrcpy：建屏 / 取帧 / 定向输入]
     subgraph AVD[同一个 Android 模拟器实例]
         MAIN[主屏：用户 App 与输入法]
         VD[副屏：图库 / 日历 / 外卖 / 腾讯会议]
     end
-    BR <-->|定向观察与操作| VD
+    AP <-->|按副屏过滤与操作| VD
+    SC <--> VD
     BR --> ART[截图 / 窗口树 / 操作证据]
     ART --> UI
 ```
@@ -87,6 +90,8 @@ DAG 节点表达“筛选符合条件的菜品”“填写并创建会议”等�
 | “别下单了” | 停止新提交，核对已经发生的副作用 |
 
 改写不得丢掉否定条件、金额、数量、时间和时区，不得把“比较一下”扩大为“下单”。历史摘要只用于理解，任务约束和授权另行持久化。需要澄清时通过电脑对话，不向 Android 主屏弹框。
+
+**运行中持续维护结构化状态。** 每次理解输入同时读取当前目标、约束、DAG 版本、已完成事实、待回答问题和设备会话；不只把整段聊天重新交给模型猜测进度。`conversation_id` 标识对话，`task_id` 标识任务，`session_id/session_epoch` 标识副屏连接，三者分开。活动任务关联和用户修改先落 RunStore；Redis 保存可查询的消息历史。字段与唯一事实来源见[运行时状态契约](2026-09-21-agent-runtime-contracts.md#21-持续维护的运行状态)。
 
 ## 5. DAG、修改任务和 replan
 
@@ -147,7 +152,21 @@ coordinator 唯一修改计划；旧 revision 的模型结果和 worker 回报�
 
 “隐藏”指不占 Android 主屏，并非使用 `PRIVATE` display flag；AOSP 无障碍可能排除非系统持有的 PRIVATE 虚拟屏。电脑可以保留副屏预览。
 
-观察取自副屏帧，辅以小型 Android Accessibility 桥：声明 `canRetrieveWindowContent` 并启用 `FLAG_RETRIEVE_INTERACTIVE_WINDOWS`，通过 `getWindowsOnAllDisplays()` 按 display 筛选窗口和节点。`getRootInActiveWindow()` 可能来自任意显示区域，不作为副屏入口。无障碍权限在准备阶段启用，桥在本地过滤主屏数据后再返回。
+**优先复用 Appium UiAutomator2，不默认自写完整 Accessibility 桥。** 已核验的新版 driver/server 提供 `currentDisplayId`、按屏节点查找和 Unicode SET_TEXT；设置 `enableMultiWindows=true` 后，在 Android 设备端取目标 display 的窗口根，再序列化 XML。不能沿用默认 `getRootInActiveWindow()` 路径。具体版本、默认行为与源码见[自动化框架复用研究](../../research/2026-09-21-agent-runtime-and-gui-research.md#7-复用手机自动化框架与-mcp)。
+
+| 职责 | MVP 选择 | 本项目补充 |
+| --- | --- | --- |
+| 虚拟副屏、连续取帧 | scrcpy | 禁抢 top focus 的 flag 与会话绑定 |
+| UI 树、元素语义定位、中文填写 | Appium UiAutomator2 | 固定副屏设置、设备端范围校验、禁全局 Toast、无隐式 Enter 的 SET_TEXT |
+| 点击、滑动、Back/Enter | scrcpy 定向控制通道 | 从已验证 observation 转换坐标；失败即拒绝，不使用全局 Appium key/Back |
+| 定向启动 App | Appium `mobile:startActivity` 的 display 参数 | 可信适配器构造参数，先检查已有 task；不开放任意 Intent |
+| 任务授权、动作审阅、证据与恢复 | 本项目 Gateway / Coordinator | 复用同一 `phone.*` 接口；驱动不决定业务权限 |
+
+Appium 是设备自动化驱动，MCP 是向 Agent 暴露工具的协议，两者不替代。首版 Python 运行时直接调用 Appium 客户端和 scrcpy 适配器即可；以后需要给其他 Agent 使用时，可在同一 Gateway 外加 MCP，不另造执行逻辑。现有 Mobile MCP、Maestro 和 Playwright Android 的默认通道不满足本项目副屏/主屏输入隔离，不能原样交给模型。
+
+Appium 会话在准备期建立，自动启动/重置 App、自动解锁、切换 IME、全局 logcat 采集及无障碍服务抑制均需按[运行时契约](2026-09-21-agent-runtime-contracts.md#5-phonesessionobservation-与动作工具)约束。普通 `hideKeyboard=false` 也会触发 IME reset，应省略该 capability。全局 Toast 监听默认在 NewSession 启动，仅事后关闭设置还可能残留缓存；首版小补丁从启动时禁用其文本采集/日志/拼树。连接或 display 失效时关停工具，重绑并校验后才恢复，不能回落 display 0。
+
+这些是围绕成熟驱动的有限适配，不复制整个自动化框架。若底座探针发现无法以小范围修改满足隔离，先报告具体缺口再调整选型，不同时维护第二套自研驱动。
 
 **中文填写的系统路径已明确，目标控件兼容须前置验证。** 本次核验的 Android 14 单 IME 不会随副屏变成两套；禁抢 top focus 的副屏无法显示 IME。标准可编辑 TextView 的 `ACTION_SET_TEXT` 可直接写中文。源码已追到显示上移、task 父容器排序和 IME 请求拒绝：正确 flags 下，副屏的普通焦点/输入请求不会因此切走主屏 IME。前提是主屏保持 top、不同 App/任务、支持该动作的控件且无额外跨屏行为，详见[研究 2.3](../../research/2026-09-21-agent-runtime-and-gui-research.md)。
 
@@ -176,12 +195,14 @@ LangChain 提供消息类型、模型适配、结构化输出和工具 schema；
 | 对话历史和摘要 | 普通 Redis + `ConversationHistoryStore` | 完整消息结构、稳定 message ID、幂等追加 |
 | 执行 checkpoint | 文件型 `AsyncSqliteSaver` | 单进程单用户本地 MVP；不使用内存数据库 |
 | 计划版本、控制事件、操作账本、历史投递 | 本地 SQLite | 保存事实与未知结果，不从聊天推断是否已下单 |
-| 截图/窗口树/大结果 | 本地 artifacts | Redis/上下文只放引用和必要摘要；默认不入 Git |
+| 截图/窗口树/大结果 | 本地 artifacts | 持久历史只放引用和必要摘要；视觉调用临时加载实际图片；默认不入 Git |
 | skills / AppProfile | Git 文件 | 受审阅、固定版本，不赋予额外权限 |
 
 `langchain_redis.RedisChatMessageHistory` 和 RedisSaver 涉及 JSON/Search。为简化部署，先用基本 Redis 命令封装 history adapter，并复用 LangChain 完整 message 编解码；不引入向量库或长期语义记忆。
 
 `conversation_id` 对应会话，checkpoint `thread_id = task_id`。MVP 一个会话最多一个活动任务，actor 固定本地用户；通过 `ActorContext` 与存储接口留扩展位置，不实现租户注册、配额或分布式调度。
+
+`RuntimeState` 是由这些存储组成的执行视图，不新增第三份独立状态库。SQLite 保存目标/约束的权威版本、控制水位和真实操作结果；checkpoint 保存可对账的执行游标；Redis 的摘要不能覆盖这些事实。恢复顺序为：读取状态并盘点未决操作、阻断业务写入 → 对账修改与版本 → 重建并校验设备连接、重新观察 → 从 App 核查未决结果 → 满足继续条件后恢复；不从旧截图或旧提交按钮直接重放。
 
 工具消息保留 `tool_call_id` 配对，裁剪按完整调用组进行。Redis 历史与图内 prompt 窗口分开，不每轮重载并重复追加。持久事件投影到 Redis，用 message ID 去重；Redis/SQLite 双写不原子，投递失败可重放，不影响对真实操作结果的判定。
 
@@ -199,7 +220,7 @@ LangGraph interrupt 恢复会从节点开头重跑；checkpoint 不保证跨 App
 
 | 场景 | 真实 GUI 操作 | 成功证据 |
 | --- | --- | --- |
-| 行程截图 → 日历 | 副屏图库读选定图片，提取日期/地点，进入日历检查并创建 | 从日历列表重新打开详情核对字段；不调用 Calendar Provider 代写 |
+| 行程截图 → 日历 | 副屏图库读选定图片，VLM 直接提取结构化事件，校验后进入日历检查并创建 | 从日历列表重新打开详情核对字段；不调用 Calendar Provider 代写 |
 | 查询 / 创建腾讯会议 | 已登录 App 查询指定日期会议，按请求预约未来常规会议 | 回列表重新打开，核对主题、时间、会议号/链接；不入会、不自动发邀请 |
 | 按需求点外卖 | 搜店、比较菜品、设规格、加购、核价，授权覆盖后提交 | 加购完成看购物车；准备订单看最终结算核对页；真实下单看订单号/状态，支付另验 |
 
@@ -208,6 +229,23 @@ LangGraph interrupt 恢复会从节点开头重跑；checkpoint 不保证跨 App
 优先稳定日历与腾讯会议，再完成外卖。外卖演示若不实际提交，应明确称“按需求选餐并准备订单”；不能写“已点好外卖”。真实订单演示按具体授权和实际费用安排，不能用模拟页面冒充第三方 App。
 
 1–2 分钟视频可重点演示一个完整任务，并以清楚标注的片段展示其余独立运行。三个都要实时完成时先测耗时，不能用快进伪装实时。详见[验证与演示计划](../../validation/2026-09-21-feasibility-and-demo.md)。
+
+### 11.1 行程图片：MVP 直接使用 VLM
+
+首版不部署单独 OCR 引擎。通用 GUI 执行器在副屏图库打开用户指定的图片，把该副屏画面作为 LangChain 图像消息交给 VLM，输出符合 schema 的事件候选。模型适配器须把 artifact 引用解析成接口支持的实际图片载荷；只在 prompt 中写本地路径不算传图。行程 skill 提供领域解释规则；结构化模型输出和校验仍复用通用运行时，不另建日历执行引擎。
+
+```mermaid
+flowchart LR
+    IMG[副屏打开选定行程图片] --> VLM[VLM 提取事件与证据]
+    VLM --> CHECK[字段 / 时间 / 歧义校验]
+    CHECK -->|信息充分| GUI[日历 GUI 查重与填写]
+    CHECK -->|关键字段不清| ASK[放大重读或向用户澄清]
+    GUI --> VERIFY[重新打开详情核验]
+```
+
+候选字段包括事件类型/标题、日期与年份、起止时间、时区、地点，以及来源图片、可见原文和歧义；原始值和规范化值分开。日期合法性、结束时间晚于开始时间、时区/跨日处理用确定性代码校验；缺失年份或航班两端时区没有依据时不猜。模型自报置信度不作为自动写入的唯一标准，合法 JSON 也不等于识别正确。
+
+小字先在副屏放大/重拍或裁切已获准图片，有限重试后仍不清楚就澄清；重复截图要合并候选，再查可见日历以避免重复创建。保存后重新打开日历详情，将实际字段与已确认候选比较。模型配置须先验证图像理解与结构化输出；只有实测准确率、成本或延迟需要时才评估独立 OCR。
 
 ## 12. MVP 范围
 
