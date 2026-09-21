@@ -1,0 +1,22 @@
+# Local credentials and machine settings
+.env
+.env.*
+!.env.example
+.agents/
+.vscode/
+
+# Build outputs and local experiments
+__pycache__/
+.venv/
+.pytest_cache/
+.gradle/
+**/build/
+local.properties
+*.apk
+*.aab
+
+# Device data, screenshots, model traces and recordings
+artifacts/
+evidence/private/
+*.log
+.DS_Store
