@@ -6,6 +6,8 @@
 
 本轮没有读取模型凭据、调用模型/业务 API 或使用真实账号。只实现可复现探针，没有开始通用 Agent/业务 skills。源码与运行步骤见[实验入口](../../experiments/display_concurrency/README.md)，数值、版本及哈希见[机器可读记录](../../experiments/display_concurrency/results/2026-09-21-api34.json)。
 
+后续为兼容官网 ARM64 APK 改用 Google APIs API 34 镜像；安装与该镜像的独立复验见[真实 App 准备报告](2026-09-21-real-app-preparation.md)。本报告保留原 AOSP 运行条件和结果，不代表所有 API 34 镜像。
+
 ## 1. 实验对象与实际版本
 
 | 对象 | 实际使用 |

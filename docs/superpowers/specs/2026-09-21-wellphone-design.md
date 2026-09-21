@@ -16,6 +16,8 @@
 
 开发和演示以一个官方 AVD 为目标，首轮预检固定 API 34，以对应已追踪的 Android 14 源码；API 35 属后续单独验证版本。两个独立模拟器不能证明同机并发。没有真机也推进模拟器验证版，提交时说明原题的物理手机部署项尚未覆盖。
 
+AVD（Android Virtual Device）是一台虚拟 Android 设备的配置与数据。真实 App 准备已发现原 AOSP x86_64 镜像不能安装 ARM64 官网 APK，现改用含 ARM64 翻译的官方 Google APIs API 34 镜像；美团和腾讯会议已安装并打开首次页面，仍待登录及业务验收。镜像、来源与操作入口以[准备报告](../../validation/2026-09-21-real-app-preparation.md)为准，不将旧镜像实验结果直接视为新环境通过。
+
 | 路线 | 优势 | 代价 | 决定 |
 | --- | --- | --- | --- |
 | 通用副屏 GUI Agent | 使用真实 App、现有账号；工具可组合成新任务 | 焦点、中文输入、App 跳屏与结果核验须实测 | 本版主线 |
@@ -125,7 +127,7 @@ coordinator 唯一修改计划；旧 revision 的模型结果和 worker 回报�
 | 类别 | 工具示例 | 边界 |
 | --- | --- | --- |
 | 会话 | `phone.session.open/status/close` | 绑定副屏；模型不能自行选择主屏或其他设备 |
-| 观察 | `phone.observe` | 副屏截图与该 display 的窗口树 |
+| 观察 | `phone.observe` | 默认返回副屏语义快照；需要视觉时附该 display 的截图 |
 | 导航 | `phone.launch_app`、`phone.back` | 已审核包名和页面转移；禁止全局 Home / monkey |
 | 交互 | `phone.tap/swipe/set_text/key` | 指定 observation 与目标；中文填入通过实验后启用 |
 | 等待 | `phone.wait_for` | 等待可观察条件，有超时和取消点 |
@@ -137,6 +139,24 @@ coordinator 唯一修改计划；旧 revision 的模型结果和 worker 回报�
 通用点击也可能购买或发送，因此影响级别不能只相信模型自报。`AppProfile` 描述包名/版本、已测页面、已知提交入口、允许转移和结果核验方式。无法判断影响的动作不能自动归类为无害导航；skill 无法绕过网关。
 
 首版不提供任意 shell/HTTP、主屏截图、全局输入/剪贴板、切换 IME 等工具。
+
+### 6.1 观察策略：控件树优先，视觉按需补充
+
+原生 Android App 没有统一的网页 DOM，但无障碍树可以提供文本、描述、控件类型、可用状态、资源 ID 和边界。Appium 已能把它序列化为 XML；适配层将副屏树压缩为类似 Playwright MCP snapshot 的语义快照，让普通文本 LLM 判断下一步，不必每次都调用视觉模型。
+
+```text
+# 示意，不是已采集的腾讯会议界面
+observation=o42
+[r1] textbox label="会议主题" value="" actions=[set_text]
+[r2] text "2026-09-22 10:00"
+[r3] button "预约会议" enabled=true actions=[tap]
+```
+
+模型引用本次观察中的 `r1/r3`；`set_text` 走已验证的节点填写路径，`tap(ref)` 由适配层重新核对节点/窗口及 bounds 后转为 scrcpy 副屏定向输入，不启用未经核验的全局点击。快照保留价格、日期、费用和列表层次等任务相关信息，不能只留下可点击按钮。节点可写能力必须读取真实 action list，不能根据类名推测。
+
+图片内内容、自绘区域、没有标签的图标、缺失或歧义严重的树才触发视觉观察。VLM 接收当前副屏图并提出目标，仍走同一观察新鲜度和显示守卫；它不能补出 App 未提供的中文填写能力。行程截图本身没有文字节点，继续直接用 VLM 提取事件。截图可保留为本地证据，但无需每轮传给模型；实际延迟与 token 收益尚未测量。
+
+商业 App 的 WebView 可能暴露无障碍节点，但不保证开放网页调试接口，因此不能默认像浏览器那样读取 DOM。MVP 使用原生上下文；以后若接入可调试 WebView，须另验 DOM 与副屏窗口的绑定。字段与失效规则见[观察契约](2026-09-21-agent-runtime-contracts.md#51-模型可读的语义快照)。
 
 ## 7. 外置 skills 与 AppProfile
 

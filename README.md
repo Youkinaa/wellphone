@@ -34,6 +34,8 @@ flowchart LR
 - [主设计](docs/superpowers/specs/2026-09-21-wellphone-design.md) · [运行时契约](docs/superpowers/specs/2026-09-21-agent-runtime-contracts.md)：工具、skills、DAG/replan、消息和恢复。
 - [本轮资料核验](docs/research/2026-09-21-agent-runtime-and-gui-research.md) · [平台研究与历史路线](docs/research/2026-09-21-platform-research.md)：三份用户参考及官方源码依据。
 - [验证与演示计划](docs/validation/2026-09-21-feasibility-and-demo.md)：实验门槛、三个演示、7 天安排和未通过时的处理。
-- [实测报告](docs/validation/2026-09-21-appium-concurrency-probe.md) · [探针部署步骤](experiments/display_concurrency/README.md)：60 秒主屏合成输入期间，副屏完成 141 轮读树/中文填写/读回/点击；保留限制与失败记录。
+- [原 AOSP 实测报告](docs/validation/2026-09-21-appium-concurrency-probe.md) · [探针部署步骤](experiments/display_concurrency/README.md)：60 秒主屏合成输入期间，副屏完成 141 轮操作；保留限制与失败记录。
+- [App 安装与登录准备](docs/validation/2026-09-21-real-app-preparation.md)：美团与腾讯会议已装入支持 ARM64 的 API 34 AVD，新镜像机制复验完成 87 轮；待登录和真实页面验收。
+- [开发问题与决策日志](docs/development-journal.md)：持续记录问题、证据、取舍、修复结果和面试复盘。
 
 范围：单用户、单进程、单 AVD、单副屏、单活动任务；只承诺通过实测的 App/页面。模拟器验证不等于原题的物理手机部署，该项有设备后补验。

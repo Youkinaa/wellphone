@@ -52,6 +52,8 @@
 
 ### 1.3 从汇总中追读的实际实现
 
+[PhoneLLM Awesome](https://github.com/PhoneLLM/Awesome-LLM-Powered-Phone-GUI-Agents) 是分类整理的论文、项目和评测资源索引，不是可安装的手机驱动、MCP 服务或完整 Agent。它帮助找到可比较的方法和可继续阅读的实现；本项目借鉴了下列思路，尚未集成这些项目代码，也不能用索引或论文成绩证明主副屏隔离。
+
 | 项目与源码 | 核验事实 | 采用与舍弃 |
 | --- | --- | --- |
 | [AppAgent document_generation](https://github.com/TencentQQGYLab/AppAgent/blob/main/scripts/document_generation.py)、[executor](https://github.com/TencentQQGYLab/AppAgent/blob/main/scripts/task_executor.py) | 根据演示/探索的前后观察生成元素说明，执行时检索当前 UI 元素知识 | 外置 UI 经验可跨任务复用；知识需审阅，元素 ID 不能当作永久稳定定位 |
@@ -226,6 +228,16 @@ server 的 [AndroidX 依赖](https://github.com/appium/appium-uiautomator2-serve
 - **显示守卫必须读当前窗口。** [UiObject2Element.getDisplayId](https://github.com/appium/appium-uiautomator2-server/blob/4a8139161cbb3aad078e36539995eb734297d56e/app/src/main/java/io/appium/uiautomator2/model/UiObject2Element.java#L172)取 AndroidX 创建元素时缓存的 display。设备端应刷新节点并读取 `node.getWindow().getDisplayId()`，窗口为空就拒绝；一次会话固定一个显示，重建废弃旧句柄。此处是代码审计发现的防护缺口，没有把潜在错路由描述为已观察到的故障。
 
 后续实测：60.65 秒内，主屏完成 79 轮合成 composing/commit，副屏完成 141 轮中文替换、读回与定向点击；记录中主屏焦点和 IME 连接未变。默认 idle 的单次 source 为 10.1 秒，idle=0 的 141 次中位数为 120.72 毫秒。原版 server 的 Toast/特殊尾缀/设备端守卫仍未补齐，因此这些结果只支持机制可行，不能宣称原版工具满足所有隔离要求。方法及两个探针配置失败见[实测报告](../validation/2026-09-21-appium-concurrency-probe.md)。
+
+### 7.5 结构化树可以代替每步截图输入
+
+[Playwright MCP 官方 README](https://github.com/microsoft/playwright-mcp) 明确采用结构化 accessibility snapshots，并说明普通操作无需视觉模型；它并非只把整页 DOM 原样交给 LLM。原生 Android 虽没有统一 DOM，Appium 的 accessibility XML 也可转换为这类快照。决定采用“副屏树 → 压缩语义快照 → 文本 LLM；必要时副屏图 → VLM”，不会要求每轮 GUI 导航都走视觉模型。
+
+Appium 的动作信息并非默认全部包含：[IncludeA11yActionsInPageSource](https://github.com/appium/appium-uiautomator2-server/blob/4a8139161cbb3aad078e36539995eb734297d56e/app/src/main/java/io/appium/uiautomator2/model/settings/IncludeA11yActionsInPageSource.java) 默认 false；须开启或由设备端直接读取实际 action list，才能向模型声明某字段允许 SET_TEXT。文本、属性和 bounds 的存在不证明该动作可用。
+
+商业 App 的 WebView 不保证可读 DOM。[UiAutomator2 Hybrid Mode](https://github.com/appium/appium-uiautomator2-driver/blob/7a54db007aa8a44f5df21cd0b52afc13c0d277ae/README.md#hybrid-mode) 要求目标 WebView 正确配置且可调试；能读原生无障碍树不等于能接 Chrome DevTools。MVP 不切 WebView context，沿用副屏树与视觉补充；实际覆盖率待真实页面预检。
+
+视觉只补观察缺口，不能修复不支持的中文填写、错误显示绑定或不可验证的操作结果。具体字段、ref 和失效处理见[运行时契约 5.1](../superpowers/specs/2026-09-21-agent-runtime-contracts.md#51-模型可读的语义快照)。
 
 ## 8. 本轮状态与视觉提取决策
 

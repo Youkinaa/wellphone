@@ -124,7 +124,7 @@ PhoneBackend 独占 Appium session 和 scrcpy 控制通道，经本机 ADB 连�
 
 模型只调用 `phone.*`，不能任意执行 Appium 命令、修改 settings、使用旧 `-android uiautomator` 选择器、切换 WebView context 或读全局日志。设备端保持绑定 display/epoch，拒绝非目标窗口节点、失效显示与未绑定请求；电脑端 guard 不能代替这一检查。节点刷新后读取 `node.getWindow().getDisplayId()`；`UiObject2Element.getDisplayId()` 返回构造时缓存值，不能独自证明当前窗口归属。
 
-Observation 包含：`observation_id, session_epoch, display_id, package, activity, windows, frame_id, captured_at, viewport, rotation, screenshot_ref, tree_ref`。设备端在序列化前过滤非目标 display 的窗口、节点及事件内容；画面取自 scrcpy 绑定副屏。树与帧不是原子快照，窗口/旋转/画面不一致时重新观察。节点 ID 只在对应观察世代有效，不将 Appium 元素缓存当作跨页面或跨恢复的稳定句柄。
+Observation 包含：`observation_id, session_epoch, display_id, package, activity, windows, frame_id, captured_at, tree_captured_at, frame_captured_at, viewport, rotation, screenshot_ref, tree_ref, semantic_snapshot_ref`。设备端在序列化前过滤非目标 display 的窗口、节点及事件内容；画面取自 scrcpy 绑定副屏。树与帧不是原子快照，分别记录采集时间；窗口/旋转/画面不一致时重新观察。节点 ID 只在对应观察世代有效，不将 Appium 元素缓存当作跨页面或跨恢复的稳定句柄。
 
 动作请求至少包含 `session_ref, observation_id, target, args, expected_package, expected_precondition`。执行前检查 epoch、App、窗口、旋转和目标新鲜度；页面变化则重新观察并重新定位。坐标以对应截图的尺寸/旋转解释，不能把旧图坐标直接打到新页面。
 
@@ -147,6 +147,20 @@ Appium 启动配置属于可信部署配置，模型不可改写：
 - 默认 Appium gesture 注入存在定向设置失败后继续执行的路径；首版复用 scrcpy 的失败即拒绝通道。以后启用 Appium gesture 必须先修该路径和节点窗口为空回落 display 0 的行为，再单独验收。
 
 上述约束与上游固定版本关系见[研究第 7 节](../../research/2026-09-21-agent-runtime-and-gui-research.md#7-复用手机自动化框架与-mcp)，不能用安装最新版代替依赖锁定和运行验收。
+
+### 5.1 模型可读的语义快照
+
+`phone.observe` 默认将副屏树压缩为文本语义快照；图像按任务需要附加，原始 XML/截图仍可作为本地证据引用。模型不必每轮同时接收整棵 XML 和图像。快照至少保留：
+
+- 观察身份及当前 App/窗口；每个节点的临时 `ref`、类型、文本/标签、可用/可编辑/选中状态和允许动作。
+- 与决策相关的非交互信息和分组关系，例如商品价格、配送费、会议日期，以及文字归属的列表项。
+- 已知缺失区域、截断范围、歧义及覆盖未知提示；树不能完整判定自身遗漏，不把空树解释为无内容或操作成功。
+
+可信适配层保存 `ref → 当前观察中的窗口/节点定位条件/bounds` 映射。模型端 `phone.tap(target.ref)` 与 `phone.set_text(target.ref, text)` 都必须附 `observation_id`；执行前刷新并验证显示、窗口、目标语义和位置，页面改变或匹配不唯一就重新观察。点击沿用 scrcpy 定向通道，不直接映射到任意 Appium click。坐标目标仅在已有对应视觉观察时开放，遵循同样守卫；失效 ref 不自动降级为旧坐标。
+
+`supported_actions` 是设备信息与 Gateway 允许能力的交集。UiAutomator2 的 `includeA11yActionsInPageSource` 默认关闭；候选配置须显式打开并核验输出，或由设备端读取 action list。若拿不到真实 SET_TEXT 能力，返回未知/不支持，不凭 `EditText` 类名宣布可写。这个设置不替代执行时的节点检查。
+
+图片内容、自绘控件、无标签目标或无法通过树消歧时才请求视觉模型；保存触发原因和所用帧。VLM 输出不能绕过 display/epoch 检查，也不能作为全局 IME、剪贴板或无支持文本填写的回退授权。MVP 不开放 WebView context 切换；可调试 DOM 是未来单独验证的观察源。以上为设计契约，语义快照适配器尚未实现。
 
 ## 6. skills 与 AppProfile 的数据边界
 
