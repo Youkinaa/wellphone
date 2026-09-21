@@ -1,36 +1,38 @@
 # Wellphone
 
-用户在 Android 前台刷屏、打字时，Agent 同时完成设备任务。**当前为调研与设计阶段，尚无可运行 APK，也没有设备实验结果。** 按现有设备条件，开发与演示以单个 Android 模拟器为主，真机可选。
+用户在 Android 主屏刷屏、打字，Agent 在**同一个 Android 实例的虚拟副屏**操作真实 App。**当前仅完成调研与设计，尚无可运行程序或设备实验结果。** 开发与演示以单个官方 Android 模拟器为主，真机可选。
 
-首选方案：Android 模拟器 + 电脑 Agent + Android 端受控 ContentProvider。首个任务是把设备中预先授权的行程截图整理为真实日历事件，并读回核验。通过系统数据接口执行，全程不需要点击主屏或切换输入法。副屏 GUI 自动化列为扩展实验。
+方案：LangGraph 通用编排 + LangChain 消息/模型适配 + 可修改的任务 DAG + 外置 skills + 受控 GUI 工具。计划演示行程截图转日历、查询/创建腾讯会议、按需求点外卖；三者共用执行器，通过真实 App 界面完成，不接业务 API。副屏焦点、中文输入和 App 兼容性是首轮实验门槛。
 
 ```mermaid
 flowchart LR
-    U[用户刷屏 / 打字] --> F[模拟器前台 App]
-    P[电脑 Agent] <--> M[模型 API]
-    P <-->|ADB| C[同一 Android 实例的能力 Provider]
-    C --> I[已授权截图]
-    C <--> K[系统日历]
-    C --> R[设备本地行程单与回执]
+    U[用户] --> MAIN[AVD 主屏]
+    C[电脑对话 / 计划审阅] --> G[LangGraph + 任务 DAG]
+    S[外置 skills] --> G
+    G <--> L[LangChain / 模型 API]
+    G <--> R[Redis 历史 / SQLite 执行状态]
+    G --> T[受控工具 / scrcpy / 无障碍桥]
+    T <--> SUB[同一 AVD 副屏的真实 App]
 ```
 
 **计划部署步骤**（实现后补充可执行命令）：
 
-1. 用 Linux / Windows / macOS 安装 Android Studio、SDK 和 Platform Tools，创建一个 API 34/35 AVD。
-2. 在该模拟器中准备前台使用 App 和可写系统日历；用户和 Agent 必须使用同一个 AVD 实例。
-3. 安装 Companion，预先选择截图、授权日历并选择可写日历；随后用户回到自己的 App。
-4. 在电脑配置 `.env`、启动 Agent，执行任务并检查手机日历读回结果；任务期间不打开 Companion 界面。
+1. 安装 Android Studio / SDK / Platform Tools，创建 API 34/35 AVD；准备主屏使用 App、图库/日历、一个外卖 App 和腾讯会议，预先登录。
+2. 编译固定版本的 scrcpy 副屏补丁及 Android 无障碍桥，完成授权；验证主屏持续中文输入时副屏不抢焦点或键盘。
+3. 启动带持久化的本地 Redis；配置模型与设备参数，启动电脑 Agent 和控制台。SQLite 状态与截图保存在本地。
+4. 运行通用 Agent，查看 DAG、动作和证据；从真实 App 列表重新打开结果核验。下单与支付按具体授权执行并分别报告状态。
 
-| 环境变量 | 用途 |
+| 环境变量 | 用途 / 状态 |
 | --- | --- |
-| `OPENAI_API_KEY` | 模型服务密钥，只保存在电脑本地 |
-| `OPENAI_BASE_URL` | 当前模型服务地址；接口兼容性待验证 |
-| `LLM_MODEL` | 模型名称；图像输入和结构化输出能力待验证 |
+| `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`LLM_MODEL` | 已有模型配置；图像输入、结构化输出和 GUI 定位待验证 |
+| `REDIS_URL` | 拟定：会话历史连接地址 |
+| `ANDROID_SERIAL` | 拟定：唯一目标 AVD；副屏 ID 由会话管理器分配 |
+| `WELLPHONE_STATE_DIR`、`WELLPHONE_SKILLS_DIR` | 拟定：本地状态/证据目录与产品技能目录 |
 
-`.env`、手机截图和原始运行记录不入库。连接指定设备、任务配置等参数待实现时定义。
+上述新增配置名尚未接入代码。`.env`、截图、账号数据和原始轨迹不入库；产品 `skills/` 与开发助手的 `.agents/skills/` 分开。
 
-- [方案设计](docs/superpowers/specs/2026-09-21-wellphone-design.md)：任务、架构、接口、可靠性及路线取舍。
-- [资料调研](docs/research/2026-09-21-platform-research.md)：Android / iOS / 模拟器边界及第一手来源。
-- [验证与演示计划](docs/validation/2026-09-21-feasibility-and-demo.md)：先验证什么、7 天安排、1–2 分钟演示。
+- [主设计](docs/superpowers/specs/2026-09-21-wellphone-design.md) · [运行时契约](docs/superpowers/specs/2026-09-21-agent-runtime-contracts.md)：工具、skills、DAG/replan、消息和恢复。
+- [本轮资料核验](docs/research/2026-09-21-agent-runtime-and-gui-research.md) · [平台研究与历史路线](docs/research/2026-09-21-platform-research.md)：三份用户参考及官方源码依据。
+- [验证与演示计划](docs/validation/2026-09-21-feasibility-and-demo.md)：实验门槛、三个演示、7 天安排和未通过时的处理。
 
-范围：首版覆盖已授权截图和系统日历，不承诺任意第三方 App 后台操作。模拟器演示可以完成当前范围；原题的真机部署项仍属未覆盖，有设备后补验。
+范围：单用户、单进程、单 AVD、单副屏、单活动任务；只承诺通过实测的 App/页面。模拟器验证不等于原题的物理手机部署，该项有设备后补验。
