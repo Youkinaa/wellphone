@@ -2,7 +2,7 @@
 
 用户在 Android 主屏刷屏、打字，Agent 在**同一个 Android 实例的虚拟副屏**操作真实 App。**已通过原生控件与合成 IME 的并发机制探针；通用 Agent、真人输入和真实 App 尚未验收。** 开发与演示以单个官方 Android 模拟器为主，真机可选。
 
-候选方案：LangGraph 通用编排 + LangChain 消息/模型适配 + 可修改的任务 DAG + 外置 skills + Appium/scrcpy 受控 GUI 工具。计划演示行程截图转日历（VLM 直接识别）、查询/创建腾讯会议、按需求点外卖；三者共用执行器，通过真实 App 界面完成，不接业务 API。**先做无需 LLM 的副屏与真实 App 预检，通过后再实现 Agent 内核。**
+候选方案：LangGraph 通用编排 + LangChain 消息/模型适配 + 可修改的任务 DAG + 外置 skills + Appium/scrcpy 受控 GUI 工具。计划演示行程截图转日历（VLM 直接识别）、查询/创建腾讯会议、按需求点外卖；三者共用执行器，通过真实 App 界面完成，不接业务 API。**先做腾讯会议副屏预检与闭环，Web 接入并行；美团专项排查暂缓，后续采用有限重试，未决提交先核查。**
 
 ```mermaid
 flowchart LR

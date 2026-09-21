@@ -152,7 +152,7 @@ host 启动还记录 `Vulkan driver doesn't support any external memory modes`�
 | 仅回退渲染为 SwiftShader，保留 4 核/6 GiB | 系统启动完成、美团启动 ok（2053 ms）；14:09:56 宿主 QEMU 再次 signal 11，进程退出 139，ADB 消失 | 与 3.2 中低资源 SwiftShader 的宿主崩溃均有记录；没有可用 core，仍不能断言具体渲染函数或与 App 崩溃同因 |
 | 恢复最终调试配置 | 回到 4 核/6 GiB/host；回读 boot=1、CPU 0–3、NVIDIA GLES、NexusLauncher、三键导航和原 Google IME，不再自动打开美团 | 选择能维持本轮系统启动的配置供后续定位；不标记 App 或持续稳定性通过 |
 
-最终仍用本页第 3 节启动命令。两种渲染均未取得美团稳定业务证据，不能把参数加大当作修复，也不再堆新参数试错。下一步围绕上述 MTWebView/JNI 触发链和 ANR 分别取线程/库映射证据，必要时讨论固定 App/镜像/模拟器版本；不私自替换登录环境或扩大为新平台迁移。
+最终仍用本页第 3 节启动命令。两种渲染均未取得美团稳定业务证据，不能把参数加大当作修复，也不再堆新参数试错。**用户最新决定：美团专项排查暂缓，保留已知问题，优先开发腾讯会议与交互入口。** 后续使用美团时按[有限重试契约](../superpowers/specs/2026-09-21-agent-runtime-contracts.md#41-mvp-的有限重试)恢复观察或符合条件的副屏启动，不能自动重试业务提交或重启 AVD。将来恢复专项定位时，再围绕 MTWebView/JNI 与 ANR 分别取线程/库映射证据；不私自替换登录环境或扩大为新平台迁移。
 
 脱敏结果保存在本地 `artifacts/diagnostics/meituan-upgraded-host-failed.json`；首轮定向 logcat、崩溃摘要、各次启动日志和 Apport 记录留作未解决问题证据，不入 Git。新配置尚未跑主副屏真人输入或业务验收。问题与状态见开发日志 J11–J12。
 
@@ -176,4 +176,4 @@ host 启动还记录 `Vulkan driver doesn't support any external memory modes`�
 
 本轮尚未验证美团搜索/结算、腾讯会议查询/预约、后台旧 task、支付/外链或通知干扰。语义快照与模型编排仍为设计阶段。
 
-后续依照[验证计划](2026-09-21-feasibility-and-demo.md)推进：登录已由用户确认 → 性能诊断及真实 App 必要页面预检 → 副屏填写/转移与主屏真人输入并发 → 通用 Agent。交互层可按设计基线并行开发，不依赖所有业务页面均通过；真实任务执行入口仍受设备门槛控制。问题与最终解决过程持续更新[开发日志](../development-journal.md)。
+后续依照[验证计划](2026-09-21-feasibility-and-demo.md)推进：腾讯会议必要页面预检 → 副屏填写/转移与主屏真人输入并发 → 通用 Agent 的会议查询/预约闭环 → 行程图到日历 → 美团外卖。美团专项性能/崩溃定位暂缓；交互层可按设计基线并行开发，不依赖所有业务页面均通过。真实任务执行入口仍受对应设备与页面门槛控制，有限重试不代替验收。问题与最终解决过程持续更新[开发日志](../development-journal.md)。
